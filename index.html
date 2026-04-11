@@ -38,13 +38,13 @@
   <header>
     <div>
       <h1>Multi-Station Prediction Board</h1>
-      <div style="font-size: 13px; opacity: 0.7; margin-top: 4px;">At-a-glance official METARs & Forecasts</div>
+      <div style="font-size: 13px; opacity: 0.7; margin-top: 4px;">At-a-glance Official NWS/METARs</div>
     </div>
     <button onclick="refreshAll()">Refresh Data</button>
   </header>
 
   <div class="grid" id="dashboard">
-    </div>
+  </div>
 
 <script>
   // Configuration for your target stations
@@ -68,10 +68,9 @@
     return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(dateMs));
   }
 
-  // Safely check if clouds array exists to prevent mapping errors
   function formatClouds(cloudsArr) {
     if (!Array.isArray(cloudsArr) || cloudsArr.length === 0) return "Clear";
-    return cloudsArr.map(c => `${c.cover || ''}${c.base ? ` @ ${c.base}00ft` : ''}`).join(', ');
+    return cloudsArr.map(c => `${c.cover || ''}${c.base ? ` @ ${c.base} ft` : ''}`).join(', ');
   }
 
   async function fetchStationData(st) {
@@ -87,33 +86,34 @@
          catch(e) { throw new Error("AWC returned invalid JSON data"); }
       }
 
-      // Normalize array structure (Protects against AWC API wrapping changes)
       let obsList = [];
       if (Array.isArray(awcData)) obsList = awcData;
       else if (awcData && Array.isArray(awcData.data)) obsList = awcData.data;
 
-      // 2. Fetch Open-Meteo Forecast
-      const omUrl = `https://api.open-meteo.com/v1/forecast?latitude=${st.lat}&longitude=${st.lon}&daily=temperature_2m_max&past_days=1&forecast_days=2&temperature_unit=fahrenheit&timezone=${encodeURIComponent(st.tz)}`;
-      const omRes = await fetch(omUrl);
-      if (!omRes.ok) throw new Error(`Open-Meteo returned ${omRes.status}`);
-      const omData = await omRes.json();
+      // 2. Fetch NWS Forecast
+      const nwsRes = await fetch(`/api/nws_forecast?lat=${st.lat}&lon=${st.lon}`);
+      if (!nwsRes.ok) {
+          const errText = await nwsRes.text();
+          throw new Error(`NWS returned ${nwsRes.status}: ${errText.substring(0, 50)}`);
+      }
+      const nwsData = await nwsRes.json();
 
-      return processData(st, obsList, omData);
+      return processData(st, obsList, nwsData);
     } catch (e) {
       console.error(`Failed to fetch ${st.id}:`, e);
       return { id: st.id, name: st.name, error: true, errMsg: e.message };
     }
   }
 
-  function processData(st, obsList, omData) {
+  function processData(st, obsList, nwsData) {
     const nowMs = Date.now();
     const todayStr = getStationDateString(nowMs, st.tz);
     const yesterdayStr = getStationDateString(nowMs - 86400000, st.tz);
+    const tmrwStr = getStationDateString(nowMs + 86400000, st.tz);
 
-    // Helper to extract timestamp whether AWC gives us seconds or a string
     function extractTimeMs(obs) {
       if (!obs) return null;
-      if (typeof obs.obsTime === 'number') return obs.obsTime * 1000; // Convert seconds to MS
+      if (typeof obs.obsTime === 'number') return obs.obsTime * 1000;
       if (typeof obs.reportTime === 'string') return Date.parse(obs.reportTime);
       if (typeof obs.obsTime === 'string') return Date.parse(obs.obsTime);
       return null;
@@ -155,36 +155,38 @@
     const yestActualF = yestMaxC !== -999 ? toF(yestMaxC) : null;
     const yestTimeStr = yestMaxTime ? getStationTimeString(yestMaxTime, st.tz) : "—";
 
-    // -- C: Forecasts (Open-Meteo) --
-    const fDays = omData.daily?.time || [];
-    const fTemps = omData.daily?.temperature_2m_max || [];
+    // -- C: Forecasts (NWS Gridpoint) --
+    let todayForecastF = -Infinity;
+    let tmrwForecastF = -Infinity;
     
-    let yestForecastF = null, todayForecastF = null, tmrwForecastF = null;
-    
-    for (let i = 0; i < fDays.length; i++) {
-      if (fDays[i] === yesterdayStr) yestForecastF = fTemps[i];
-      if (fDays[i] === todayStr) todayForecastF = fTemps[i];
-      if (fDays[i] > todayStr && !tmrwForecastF) tmrwForecastF = fTemps[i]; 
+    if (nwsData.properties && nwsData.properties.periods) {
+       for(const p of nwsData.properties.periods) {
+          const tsMs = Date.parse(p.startTime);
+          const pDayStr = getStationDateString(tsMs, st.tz);
+          
+          if (pDayStr === todayStr && p.temperature > todayForecastF) {
+              todayForecastF = p.temperature;
+          }
+          if (pDayStr === tmrwStr && p.temperature > tmrwForecastF) {
+              tmrwForecastF = p.temperature;
+          }
+       }
     }
 
-    // -- D: Delta Calculation (Actual vs Forecast) --
-    let deltaStr = "—";
+    // NWS doesn't provide historical forecasts via this API easily. 
+    // We will show N/A for Yesterday's Forecast in this pure NWS build.
+    let yestForecastF = null; 
+    let deltaStr = "N/A";
     let deltaClass = "";
-    if (yestActualF !== null && yestForecastF !== null) {
-      const diff = yestActualF - yestForecastF;
-      const sign = diff > 0 ? "+" : "";
-      deltaStr = `${sign}${diff.toFixed(1)}°F`;
-      deltaClass = diff > 0 ? "delta-bad" : "delta-good"; 
-    }
 
     return {
       id: st.id, name: st.name, tz: st.tz,
       currentTempF, windStr, cloudsStr, obsTimeStr,
-      todayForecastF: todayForecastF != null ? todayForecastF.toFixed(1) : "—",
-      tmrwForecastF: tmrwForecastF != null ? tmrwForecastF.toFixed(1) : "—",
+      todayForecastF: todayForecastF !== -Infinity ? todayForecastF.toFixed(1) : "—",
+      tmrwForecastF: tmrwForecastF !== -Infinity ? tmrwForecastF.toFixed(1) : "—",
       yestActualF: yestActualF != null ? yestActualF.toFixed(1) : "—",
       yestTimeStr,
-      yestForecastF: yestForecastF != null ? yestForecastF.toFixed(1) : "—",
+      yestForecastF: yestForecastF != null ? yestForecastF.toFixed(1) : "N/A (NWS)",
       deltaStr, deltaClass
     };
   }
@@ -218,10 +220,10 @@
           <span>${data.cloudsStr}</span>
         </div>
 
-        <div class="section-title">Forward Forecast</div>
+        <div class="section-title">NWS Official Forecast</div>
         <div class="data-row">
           <span>Today's Expected High</span>
-          <span class="val">${data.todayForecastF}°F</span>
+          <span class="val" style="color: #9333ea;">${data.todayForecastF}°F</span>
         </div>
         <div class="data-row">
           <span>Tomorrow's Expected High</span>
@@ -234,11 +236,11 @@
           <span class="val">${data.yestActualF}°F</span>
         </div>
         <div class="data-row">
-          <span>Forecasted High</span>
-          <span class="val">${data.yestForecastF}°F</span>
+          <span style="opacity:0.6;">Forecasted High</span>
+          <span class="val" style="opacity:0.6;">${data.yestForecastF}</span>
         </div>
         <div class="data-row" style="margin-top: 4px; padding-top: 4px; border-top: 1px dashed rgba(127,127,127,0.2);">
-          <span>Model Delta (Actual vs Forecast)</span>
+          <span style="opacity:0.6;">Model Delta</span>
           <span class="val ${data.deltaClass}">${data.deltaStr}</span>
         </div>
       </div>
@@ -247,7 +249,7 @@
 
   async function refreshAll() {
     const container = document.getElementById('dashboard');
-    container.innerHTML = '<div style="opacity: 0.6; font-weight: 600;">Loading station feeds...</div>';
+    container.innerHTML = '<div style="opacity: 0.6; font-weight: 600;">Loading NWS & METAR feeds...</div>';
     
     const results = await Promise.all(STATIONS.map(st => fetchStationData(st)));
     container.innerHTML = results.map(renderCard).join('');
