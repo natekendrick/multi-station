@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Multi-Station Dashboard</title>
+  <title>Multi-station Dashboard</title>
   <style>
     :root { color-scheme: light dark; }
     body { font-family: system-ui, -apple-system, sans-serif; margin: 20px; line-height: 1.4; background: #f9fafb; color: #111827; }
@@ -20,8 +20,7 @@
 
     .st-header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid rgba(127,127,127,0.2); padding-bottom: 8px; margin-bottom: 12px; }
     .st-name { font-size: 20px; font-weight: 800; }
-    .st-tz { font-size: 12px; opacity: 0.6; }
-
+    
     .metar-section { margin-bottom: 16px; }
     .metar-row { display: flex; justify-content: space-between; align-items: baseline; }
     .val-large { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; color: #2563eb; }
@@ -31,19 +30,18 @@
     table.forecast-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; text-align: right; }
     table.forecast-table th { font-weight: 600; opacity: 0.7; padding-bottom: 6px; border-bottom: 1px solid rgba(127,127,127,0.2); }
     table.forecast-table th.left { text-align: left; }
-    table.forecast-table td { padding: 6px 0; border-bottom: 1px solid rgba(127,127,127,0.1); font-variant-numeric: tabular-nums; font-weight: 500; }
+    table.forecast-table td { padding: 6px 0; border-bottom: 1px solid rgba(127,127,127,0.1); font-variant-numeric: tabular-nums; font-weight: 500; vertical-align: top; }
     table.forecast-table td.left { text-align: left; font-weight: 600; opacity: 0.9; }
 
-    .err { color: #ef4444; font-size: 11px; }
-    .badge { font-size: 10px; padding: 2px 4px; border-radius: 4px; background: rgba(127,127,127,0.2); margin-left: 4px; }
+    .time-sub { display: block; font-size: 10px; opacity: 0.6; font-weight: 400; margin-top: 2px; }
   </style>
 </head>
 <body>
 
   <header>
     <div>
-      <h1>Multi-Station Dashboard</h1>
-      <div style="font-size: 13px; opacity: 0.7; margin-top: 4px;">NWS vs WUnderground vs Open-Meteo Consensus</div>
+      <h1>Multi-station Dashboard</h1>
+      <div style="font-size: 13px; opacity: 0.7; margin-top: 4px;" id="refreshTimestamp">Awaiting refresh...</div>
     </div>
     <button onclick="refreshAll()">Refresh Data</button>
   </header>
@@ -51,28 +49,29 @@
   <div class="grid" id="dashboard"></div>
 
 <script>
-  const STATIONS = [
-    { id: "KLGA", name: "LaGuardia", lat: 40.7769, lon: -73.8740, tz: "America/New_York" },
-    { id: "KMDW", name: "Chicago Midway", lat: 41.7868, lon: -87.7522, tz: "America/Chicago" },
-    { id: "KSFO", name: "San Francisco", lat: 37.6196, lon: -122.3656, tz: "America/Los_Angeles" },
-    { id: "KSEA", name: "Seattle", lat: 47.4502, lon: -122.3088, tz: "America/Los_Angeles" },
-    { id: "KLAX", name: "Los Angeles", lat: 33.9416, lon: -118.4085, tz: "America/Los_Angeles" },
-    { id: "KAUS", name: "Austin", lat: 30.1900, lon: -97.6687, tz: "America/Chicago" },
-    { id: "KMIA", name: "Miami", lat: 25.7959, lon: -80.2870, tz: "America/New_York" },
-    // NEW STATIONS
-    { id: "KLAS", name: "Las Vegas", lat: 36.0840, lon: -115.1536, tz: "America/Los_Angeles" },
-    { id: "KPHX", name: "Phoenix", lat: 33.4342, lon: -112.0116, tz: "America/Phoenix" },
-    { id: "KHOU", name: "Houston Hobby", lat: 29.6454, lon: -95.2789, tz: "America/Chicago" },
-    { id: "KATL", name: "Atlanta", lat: 33.6407, lon: -84.4277, tz: "America/New_York" }
+  let STATIONS = [
+    { id: "KLGA", name: "LaGuardia", lat: 40.7769, lon: -73.8740 },
+    { id: "KMDW", name: "Chicago Midway", lat: 41.7868, lon: -87.7522 },
+    { id: "KSFO", name: "San Francisco", lat: 37.6196, lon: -122.3656 },
+    { id: "KSEA", name: "Seattle", lat: 47.4502, lon: -122.3088 },
+    { id: "KLAX", name: "Los Angeles", lat: 33.9416, lon: -118.4085 },
+    { id: "KAUS", name: "Austin", lat: 30.1900, lon: -97.6687 },
+    { id: "KMIA", name: "Miami", lat: 25.7959, lon: -80.2870 },
+    { id: "KLAS", name: "Las Vegas", lat: 36.0840, lon: -115.1536 },
+    { id: "KPHX", name: "Phoenix", lat: 33.4342, lon: -112.0116 },
+    { id: "KHOU", name: "Houston Hobby", lat: 29.6454, lon: -95.2789 },
+    { id: "KATL", name: "Atlanta", lat: 33.6407, lon: -84.4277 }
   ];
+
+  STATIONS.sort((a, b) => b.lon - a.lon);
 
   const toF = (c) => (c * 9/5) + 32;
 
-  function getStationDateString(dateMs, tz) {
-    return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dateMs));
+  function getPTDateString(dateMs) {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dateMs));
   }
-  function getStationTimeString(dateMs, tz) {
-    return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(dateMs));
+  function getPTMilitaryTime(dateMs) {
+    return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(dateMs));
   }
 
   function extractTimeMs(obs) {
@@ -89,17 +88,35 @@
     return isJson ? res.json() : res.text();
   }
 
+  // --- SERVER-SIDE CACHE LOGIC ---
+  let globalHistoryDB = {};
+
+  async function saveForecastToServer(stid, dateStr, model, temp, time) {
+    if (temp === "Err" || temp === "—" || temp == null) return;
+    try {
+      await fetch('/api/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stid, dateStr, model, temp, time })
+      });
+    } catch (e) { console.error("Failed to save to server database", e); }
+  }
+
+  function formatCell(temp, time) {
+      if (temp === "Err" || temp === "—" || temp == null) return "—";
+      return `${temp}°F <span class="time-sub">@ ${time} PT</span>`;
+  }
+
   async function fetchStationData(st) {
     const nowMs = Date.now();
-    const todayStr = getStationDateString(nowMs, st.tz);
-    const yesterdayStr = getStationDateString(nowMs - 86400000, st.tz);
-    const tmrwStr = getStationDateString(nowMs + 86400000, st.tz);
+    const todayStr = getPTDateString(nowMs);
+    const yesterdayStr = getPTDateString(nowMs - 86400000);
+    const tmrwStr = getPTDateString(nowMs + 86400000);
 
-    // Prepare all API calls in parallel
     const pAWC = safeFetch(`/api/awc_metar?station=${st.id}`, false);
     const pNWS = safeFetch(`/api/nws_forecast?lat=${st.lat}&lon=${st.lon}`);
     const pWU = safeFetch(`/api/wu_forecast?lat=${st.lat}&lon=${st.lon}`);
-    const pOM = safeFetch(`https://api.open-meteo.com/v1/forecast?latitude=${st.lat}&longitude=${st.lon}&daily=temperature_2m_max&past_days=1&forecast_days=2&temperature_unit=fahrenheit&timezone=${encodeURIComponent(st.tz)}`);
+    const pOM = safeFetch(`https://api.open-meteo.com/v1/forecast?latitude=${st.lat}&longitude=${st.lon}&hourly=temperature_2m&past_days=1&forecast_days=2&temperature_unit=fahrenheit&timezone=America%2FLos_Angeles`);
 
     const results = await Promise.allSettled([pAWC, pNWS, pWU, pOM]);
 
@@ -114,69 +131,90 @@
        if (latest && latest.temp != null) {
            currentTempF = toF(latest.temp).toFixed(1);
            const latestMs = extractTimeMs(latest);
-           obsTimeStr = latestMs ? getStationTimeString(latestMs, st.tz) : "—";
+           obsTimeStr = latestMs ? getPTMilitaryTime(latestMs) : "—";
        }
 
        let yestMaxC = -999, yMaxTime = null;
        obsList.forEach(obs => {
          const ms = extractTimeMs(obs);
-         if (ms && obs.temp != null && getStationDateString(ms, st.tz) === yesterdayStr) {
+         if (ms && obs.temp != null && getPTDateString(ms) === yesterdayStr) {
            if (obs.temp > yestMaxC) { yestMaxC = obs.temp; yMaxTime = ms; }
          }
        });
        if (yestMaxC !== -999) {
            yestActualF = toF(yestMaxC).toFixed(1);
-           yestActualTime = getStationTimeString(yMaxTime, st.tz);
+           yestActualTime = getPTMilitaryTime(yMaxTime);
        }
     }
 
     // 2. Process NWS
-    let nwsToday = "—", nwsTmrw = "—";
+    let nwsToday = null, nwsTodayTime = null, nwsTmrw = null, nwsTmrwTime = null;
     if (results[1].status === "fulfilled") {
-        let maxT = -999, maxTm = -999;
+        let maxT = -999, maxTTm = null, maxTm = -999, maxTmTm = null;
         const periods = results[1].value.properties?.periods || [];
         periods.forEach(p => {
-            const dateStr = getStationDateString(Date.parse(p.startTime), st.tz);
-            if (dateStr === todayStr && p.temperature > maxT) maxT = p.temperature;
-            if (dateStr === tmrwStr && p.temperature > maxTm) maxTm = p.temperature;
+            const ms = Date.parse(p.startTime);
+            const dateStr = getPTDateString(ms);
+            if (dateStr === todayStr && p.temperature > maxT) { maxT = p.temperature; maxTTm = ms; }
+            if (dateStr === tmrwStr && p.temperature > maxTm) { maxTm = p.temperature; maxTmTm = ms; }
         });
-        if (maxT !== -999) nwsToday = maxT.toFixed(1);
-        if (maxTm !== -999) nwsTmrw = maxTm.toFixed(1);
+        if (maxT !== -999) { nwsToday = maxT.toFixed(1); nwsTodayTime = getPTMilitaryTime(maxTTm); }
+        if (maxTm !== -999) { nwsTmrw = maxTm.toFixed(1); nwsTmrwTime = getPTMilitaryTime(maxTmTm); }
     } else { nwsToday = "Err"; nwsTmrw = "Err"; }
 
     // 3. Process WUnderground
-    let wuToday = "—", wuTmrw = "—";
+    let wuToday = null, wuTodayTime = null, wuTmrw = null, wuTmrwTime = null;
     if (results[2].status === "fulfilled") {
-        let maxT = -999, maxTm = -999;
+        let maxT = -999, maxTTm = null, maxTm = -999, maxTmTm = null;
         const tArr = results[2].value.temperature || [];
         const timeArr = results[2].value.validTimeLocal || [];
         for(let i=0; i<tArr.length; i++) {
-            // WU gives format "2026-04-12T08:00:00-0700"
-            const dateStr = timeArr[i].split("T")[0]; 
-            if (dateStr === todayStr && tArr[i] > maxT) maxT = tArr[i];
-            if (dateStr === tmrwStr && tArr[i] > maxTm) maxTm = tArr[i];
+            const ms = Date.parse(timeArr[i]);
+            const dateStr = getPTDateString(ms);
+            if (dateStr === todayStr && tArr[i] > maxT) { maxT = tArr[i]; maxTTm = ms; }
+            if (dateStr === tmrwStr && tArr[i] > maxTm) { maxTm = tArr[i]; maxTmTm = ms; }
         }
-        if (maxT !== -999) wuToday = maxT.toFixed(1);
-        if (maxTm !== -999) wuTmrw = maxTm.toFixed(1);
+        if (maxT !== -999) { wuToday = maxT.toFixed(1); wuTodayTime = getPTMilitaryTime(maxTTm); }
+        if (maxTm !== -999) { wuTmrw = maxTm.toFixed(1); wuTmrwTime = getPTMilitaryTime(maxTmTm); }
     } else { wuToday = "Err"; wuTmrw = "Err"; }
 
-    // 4. Process Open-Meteo (includes Yest Forecast)
-    let omYest = "—", omToday = "—", omTmrw = "—";
+    // 4. Process Open-Meteo
+    let omYest = null, omYestTime = null, omToday = null, omTodayTime = null, omTmrw = null, omTmrwTime = null;
     if (results[3].status === "fulfilled") {
-        const d = results[3].value.daily || {};
-        const days = d.time || [], temps = d.temperature_2m_max || [];
-        for(let i=0; i<days.length; i++) {
-            if (days[i] === yesterdayStr) omYest = temps[i].toFixed(1);
-            if (days[i] === todayStr) omToday = temps[i].toFixed(1);
-            if (days[i] === tmrwStr) omTmrw = temps[i].toFixed(1);
+        const h = results[3].value.hourly || {};
+        const hours = h.time || [], temps = h.temperature_2m || [];
+        
+        let yT = -999, yTm = null, tT = -999, tTm = null, tmT = -999, tmTm = null;
+        for(let i=0; i<hours.length; i++) {
+            const ms = Date.parse(hours[i]);
+            const dateStr = getPTDateString(ms);
+            if (dateStr === yesterdayStr && temps[i] > yT) { yT = temps[i]; yTm = ms; }
+            if (dateStr === todayStr && temps[i] > tT) { tT = temps[i]; tTm = ms; }
+            if (dateStr === tmrwStr && temps[i] > tmT) { tmT = temps[i]; tmTm = ms; }
         }
+        if (yT !== -999) { omYest = yT.toFixed(1); omYestTime = getPTMilitaryTime(yTm); }
+        if (tT !== -999) { omToday = tT.toFixed(1); omTodayTime = getPTMilitaryTime(tTm); }
+        if (tmT !== -999) { omTmrw = tmT.toFixed(1); omTmrwTime = getPTMilitaryTime(tmTm); }
     } else { omYest = "Err"; omToday = "Err"; omTmrw = "Err"; }
 
+    // Save Today's Data back to the Server Database
+    saveForecastToServer(st.id, todayStr, "NWS", nwsToday, nwsTodayTime);
+    saveForecastToServer(st.id, todayStr, "WU", wuToday, wuTodayTime);
+
+    // Retrieve Yesterday's Data from our pre-loaded global database
+    const stHistory = globalHistoryDB[st.id] || {};
+    const yestHistory = stHistory[yesterdayStr] || {};
+    const nwsYestCache = yestHistory["NWS"];
+    const wuYestCache = yestHistory["WU"];
+
     return {
-      id: st.id, name: st.name, tz: st.tz,
-      currentTempF, obsTimeStr,
-      yestActualF, yestActualTime,
-      nwsToday, nwsTmrw, wuToday, wuTmrw, omToday, omTmrw, omYest
+      id: st.id, name: st.name,
+      currentTempF, obsTimeStr, yestActualF, yestActualTime,
+      nwsToday, nwsTodayTime, nwsTmrw, nwsTmrwTime, 
+      wuToday, wuTodayTime, wuTmrw, wuTmrwTime, 
+      omToday, omTodayTime, omTmrw, omTmrwTime, omYest, omYestTime,
+      nwsYestTemp: nwsYestCache ? nwsYestCache.temp : "—", nwsYestTime: nwsYestCache ? nwsYestCache.time : "",
+      wuYestTemp: wuYestCache ? wuYestCache.temp : "—", wuYestTime: wuYestCache ? wuYestCache.time : ""
     };
   }
 
@@ -184,12 +222,11 @@
     return `
       <div class="card">
         <div class="st-header">
-          <div class="st-name">${data.id} - ${data.name}</div>
-          <div class="st-tz">${data.tz.split('/')[1].replace('_', ' ')} Time</div>
+          <div class="st-name">${data.name} <span style="font-size: 14px; opacity:0.6;">(${data.id})</span></div>
         </div>
 
         <div class="metar-section">
-            <div class="section-title">Official Current METAR (@ ${data.obsTimeStr})</div>
+            <div class="section-title">Official METAR <span style="text-transform: none; font-weight: normal;">(@ ${data.obsTimeStr} PT)</span></div>
             <div class="metar-row">
                 <span style="font-weight: 600;">Current Temp:</span>
                 <span class="val-large">${data.currentTempF}°F</span>
@@ -198,7 +235,7 @@
 
         <div class="section-title" style="margin-top: 18px;">Prior Day Review</div>
         <div class="metar-row" style="font-size: 14px; margin-bottom: 6px;">
-            <span style="opacity:0.8;">Actual Settlement <i>(@ ${data.yestActualTime})</i></span>
+            <span style="opacity:0.8;">Actual Settlement <span style="font-size:11px;">(@ ${data.yestActualTime} PT)</span></span>
             <span style="font-weight: 600;">${data.yestActualF}°F</span>
         </div>
 
@@ -214,28 +251,22 @@
             </thead>
             <tbody>
                 <tr>
-                    <td class="left">AWC (METAR)<span class="badge">Truth</span></td>
-                    <td>${data.yestActualF}</td>
-                    <td style="opacity: 0.4;">—</td>
-                    <td style="opacity: 0.4;">—</td>
-                </tr>
-                <tr>
                     <td class="left">NWS Official</td>
-                    <td style="opacity: 0.4;">N/A</td>
-                    <td>${data.nwsToday}</td>
-                    <td>${data.nwsTmrw}</td>
+                    <td>${formatCell(data.nwsYestTemp, data.nwsYestTime)}</td>
+                    <td>${formatCell(data.nwsToday, data.nwsTodayTime)}</td>
+                    <td>${formatCell(data.nwsTmrw, data.nwsTmrwTime)}</td>
                 </tr>
                 <tr>
                     <td class="left">WUnderground</td>
-                    <td style="opacity: 0.4;">N/A</td>
-                    <td>${data.wuToday}</td>
-                    <td>${data.wuTmrw}</td>
+                    <td>${formatCell(data.wuYestTemp, data.wuYestTime)}</td>
+                    <td>${formatCell(data.wuToday, data.wuTodayTime)}</td>
+                    <td>${formatCell(data.wuTmrw, data.wuTmrwTime)}</td>
                 </tr>
                 <tr>
                     <td class="left">Open-Meteo</td>
-                    <td>${data.omYest}</td>
-                    <td>${data.omToday}</td>
-                    <td>${data.omTmrw}</td>
+                    <td>${formatCell(data.omYest, data.omYestTime)}</td>
+                    <td>${formatCell(data.omToday, data.omTodayTime)}</td>
+                    <td>${formatCell(data.omTmrw, data.omTmrwTime)}</td>
                 </tr>
             </tbody>
         </table>
@@ -245,10 +276,21 @@
 
   async function refreshAll() {
     const container = document.getElementById('dashboard');
+    const timeEl = document.getElementById('refreshTimestamp');
+    
     container.innerHTML = '<div style="opacity: 0.6; font-weight: 600;">Fetching multi-source consensus...</div>';
+    timeEl.textContent = "Refreshing...";
+
+    try {
+        // Load the global history from the server FIRST
+        const histRes = await fetch('/api/history');
+        if (histRes.ok) globalHistoryDB = await histRes.json();
+    } catch(e) { console.error("Failed to load history DB", e); }
     
     const results = await Promise.all(STATIONS.map(st => fetchStationData(st)));
     container.innerHTML = results.map(renderCard).join('');
+    
+    timeEl.textContent = `Last refreshed: ${getPTMilitaryTime(Date.now())} PT`;
   }
 
   refreshAll();
