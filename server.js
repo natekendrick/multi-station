@@ -3,11 +3,10 @@ import express from "express";
 const app = express();
 const PORT = process.env.PORT || 5179;
 
-// Serve the index.html file and any static assets
 app.use(express.static(process.cwd(), { extensions: ["html"] }));
 
 const apiCache = {};
-const CACHE_TTL_MS = 60 * 1000; // 1 minute cache TTL
+const CACHE_TTL_MS = 60 * 1000; 
 
 async function getCachedOrFetch(cacheKey, url, headers = {}) {
   const now = Date.now();
@@ -24,7 +23,7 @@ async function getCachedOrFetch(cacheKey, url, headers = {}) {
   return { status: r.status, ok: r.ok, body };
 }
 
-// Proxy for Aviation Weather Center (Free METARs)
+// Proxy for Aviation Weather Center (Historical / Current METARs)
 app.get("/api/awc_metar", async (req, res) => {
   const stid = (req.query.station || "KSFO").toString().toUpperCase();
   const url = `https://aviationweather.gov/api/data/metar?ids=${stid}&format=json&hours=48`;
@@ -34,60 +33,63 @@ app.get("/api/awc_metar", async (req, res) => {
       "User-Agent": "WeatherDashboard/1.0 (PredictionApp)",
       "Accept": "application/json"
     });
-
-    if (status === 204) {
-      return res.json([]); 
-    }
-
+    if (status === 204) return res.json([]); 
     if (!ok) return res.status(status).send(body);
-
     res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.setHeader("Cache-Control", "no-store");
     res.send(body);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
 
-// NEW: Proxy for NWS Gridpoint Forecasts
+// Proxy for NWS Gridpoint Forecasts
 app.get("/api/nws_forecast", async (req, res) => {
   const lat = req.query.lat;
   const lon = req.query.lon;
-  
   if (!lat || !lon) return res.status(400).json({ error: "Missing lat/lon" });
 
-  const cacheKey = `nws_forecast_${lat}_${lon}`;
-  
   try {
-    // Step 1: Get the Gridpoint URL for these coordinates
     const pointsUrl = `https://api.weather.gov/points/${lat},${lon}`;
-    const pointsHeaders = {
-        "User-Agent": "Mozilla/5.0 (compatible; MarketPredictionApp/1.0; nathan@example.com)",
+    const headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; MarketPredictionApp/1.0; dev@example.com)",
         "Accept": "application/geo+json"
     };
 
-    let pointsResponse = await getCachedOrFetch(`nws_points_${lat}_${lon}`, pointsUrl, pointsHeaders);
-    if (!pointsResponse.ok) return res.status(pointsResponse.status).send(pointsResponse.body);
+    let pRes = await getCachedOrFetch(`nws_points_${lat}_${lon}`, pointsUrl, headers);
+    if (!pRes.ok) return res.status(pRes.status).send(pRes.body);
     
-    const pointsData = JSON.parse(pointsResponse.body);
+    const pointsData = JSON.parse(pRes.body);
     const forecastHourlyUrl = pointsData.properties.forecastHourly;
+    if (!forecastHourlyUrl) throw new Error("No NWS hourly forecast URL");
 
-    if (!forecastHourlyUrl) throw new Error("NWS did not return an hourly forecast URL");
-
-    // Step 2: Fetch the actual hourly forecast
-    const { status, ok, body } = await getCachedOrFetch(cacheKey, forecastHourlyUrl, pointsHeaders);
-    
+    const { status, ok, body } = await getCachedOrFetch(`nws_forecast_${lat}_${lon}`, forecastHourlyUrl, headers);
     if (!ok) return res.status(status).send(body);
-
+    
     res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.setHeader("Cache-Control", "no-store");
     res.send(body);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
 
+// Proxy for Weather Underground (using your provided API key)
+app.get("/api/wu_forecast", async (req, res) => {
+  const lat = req.query.lat;
+  const lon = req.query.lon;
+  if (!lat || !lon) return res.status(400).json({ error: "Missing lat/lon" });
+
+  const url = `https://api.weather.com/v3/wx/forecast/hourly/2day?apiKey=e1f10a1e78da46f5b10a1e78da96f525&geocode=${lat},${lon}&format=json&units=e&language=en-US`;
+  try {
+    const { status, ok, body } = await getCachedOrFetch(`wu_forecast_${lat}_${lon}`, url);
+    if (!ok) return res.status(status).send(body);
+    
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.send(body);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`🌤️ Free-Tier Dashboard running at http://localhost:${PORT}`);
+  console.log(`🌤️ Aggregator Dashboard running at http://localhost:${PORT}`);
 });

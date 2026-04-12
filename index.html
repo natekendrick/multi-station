@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Market Prediction Dashboard</title>
+  <title>Multi-Station Dashboard</title>
   <style>
     :root { color-scheme: light dark; }
     body { font-family: system-ui, -apple-system, sans-serif; margin: 20px; line-height: 1.4; background: #f9fafb; color: #111827; }
@@ -14,7 +14,7 @@
     button { padding: 8px 16px; border-radius: 8px; border: 1px solid #d1d5db; background: transparent; cursor: pointer; color: inherit; font-weight: 600; }
     button:hover { background: rgba(127,127,127,0.1); }
 
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 16px; }
     .card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
     @media (prefers-color-scheme: dark) { .card { background: #1f2937; border-color: #374151; } }
 
@@ -22,40 +22,48 @@
     .st-name { font-size: 20px; font-weight: 800; }
     .st-tz { font-size: 12px; opacity: 0.6; }
 
+    .metar-section { margin-bottom: 16px; }
+    .metar-row { display: flex; justify-content: space-between; align-items: baseline; }
+    .val-large { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; color: #2563eb; }
+    
     .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; margin-top: 12px; margin-bottom: 4px; font-weight: 700; }
     
-    .data-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; font-size: 14px; }
-    .val-large { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-    .val { font-weight: 600; font-variant-numeric: tabular-nums; }
-    
-    .delta-good { color: #10b981; } /* Green */
-    .delta-bad { color: #ef4444; }  /* Red */
-    .clouds { font-size: 12px; opacity: 0.8; }
+    table.forecast-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; text-align: right; }
+    table.forecast-table th { font-weight: 600; opacity: 0.7; padding-bottom: 6px; border-bottom: 1px solid rgba(127,127,127,0.2); }
+    table.forecast-table th.left { text-align: left; }
+    table.forecast-table td { padding: 6px 0; border-bottom: 1px solid rgba(127,127,127,0.1); font-variant-numeric: tabular-nums; font-weight: 500; }
+    table.forecast-table td.left { text-align: left; font-weight: 600; opacity: 0.9; }
+
+    .err { color: #ef4444; font-size: 11px; }
+    .badge { font-size: 10px; padding: 2px 4px; border-radius: 4px; background: rgba(127,127,127,0.2); margin-left: 4px; }
   </style>
 </head>
 <body>
 
   <header>
     <div>
-      <h1>Multi-Station Prediction Board</h1>
-      <div style="font-size: 13px; opacity: 0.7; margin-top: 4px;">At-a-glance Official NWS/METARs</div>
+      <h1>Multi-Station Dashboard</h1>
+      <div style="font-size: 13px; opacity: 0.7; margin-top: 4px;">NWS vs WUnderground vs Open-Meteo Consensus</div>
     </div>
     <button onclick="refreshAll()">Refresh Data</button>
   </header>
 
-  <div class="grid" id="dashboard">
-  </div>
+  <div class="grid" id="dashboard"></div>
 
 <script>
-  // Configuration for your target stations
   const STATIONS = [
-    { id: "KLGA", name: "New York (LaGuardia)", lat: 40.7769, lon: -73.8740, tz: "America/New_York" },
-    { id: "KMDW", name: "Chicago (Midway)", lat: 41.7868, lon: -87.7522, tz: "America/Chicago" },
+    { id: "KLGA", name: "LaGuardia", lat: 40.7769, lon: -73.8740, tz: "America/New_York" },
+    { id: "KMDW", name: "Chicago Midway", lat: 41.7868, lon: -87.7522, tz: "America/Chicago" },
     { id: "KSFO", name: "San Francisco", lat: 37.6196, lon: -122.3656, tz: "America/Los_Angeles" },
     { id: "KSEA", name: "Seattle", lat: 47.4502, lon: -122.3088, tz: "America/Los_Angeles" },
     { id: "KLAX", name: "Los Angeles", lat: 33.9416, lon: -118.4085, tz: "America/Los_Angeles" },
     { id: "KAUS", name: "Austin", lat: 30.1900, lon: -97.6687, tz: "America/Chicago" },
-    { id: "KMIA", name: "Miami", lat: 25.7959, lon: -80.2870, tz: "America/New_York" }
+    { id: "KMIA", name: "Miami", lat: 25.7959, lon: -80.2870, tz: "America/New_York" },
+    // NEW STATIONS
+    { id: "KLAS", name: "Las Vegas", lat: 36.0840, lon: -115.1536, tz: "America/Los_Angeles" },
+    { id: "KPHX", name: "Phoenix", lat: 33.4342, lon: -112.0116, tz: "America/Phoenix" },
+    { id: "KHOU", name: "Houston Hobby", lat: 29.6454, lon: -95.2789, tz: "America/Chicago" },
+    { id: "KATL", name: "Atlanta", lat: 33.6407, lon: -84.4277, tz: "America/New_York" }
   ];
 
   const toF = (c) => (c * 9/5) + 32;
@@ -63,146 +71,116 @@
   function getStationDateString(dateMs, tz) {
     return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dateMs));
   }
-
   function getStationTimeString(dateMs, tz) {
     return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(dateMs));
   }
 
-  function formatClouds(cloudsArr) {
-    if (!Array.isArray(cloudsArr) || cloudsArr.length === 0) return "Clear";
-    return cloudsArr.map(c => `${c.cover || ''}${c.base ? ` @ ${c.base} ft` : ''}`).join(', ');
+  function extractTimeMs(obs) {
+    if (!obs) return null;
+    if (typeof obs.obsTime === 'number') return obs.obsTime * 1000;
+    if (typeof obs.reportTime === 'string') return Date.parse(obs.reportTime);
+    if (typeof obs.obsTime === 'string') return Date.parse(obs.obsTime);
+    return null;
+  }
+
+  async function safeFetch(url, isJson = true) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return isJson ? res.json() : res.text();
   }
 
   async function fetchStationData(st) {
-    try {
-      // 1. Fetch 48-Hour AWC METAR History
-      const awcRes = await fetch(`/api/awc_metar?station=${st.id}`);
-      if (!awcRes.ok) throw new Error(`AWC API returned ${awcRes.status}`);
-      
-      const awcText = await awcRes.text();
-      let awcData = [];
-      if (awcText.trim()) {
-         try { awcData = JSON.parse(awcText); }
-         catch(e) { throw new Error("AWC returned invalid JSON data"); }
-      }
-
-      let obsList = [];
-      if (Array.isArray(awcData)) obsList = awcData;
-      else if (awcData && Array.isArray(awcData.data)) obsList = awcData.data;
-
-      // 2. Fetch NWS Forecast
-      const nwsRes = await fetch(`/api/nws_forecast?lat=${st.lat}&lon=${st.lon}`);
-      if (!nwsRes.ok) {
-          const errText = await nwsRes.text();
-          throw new Error(`NWS returned ${nwsRes.status}: ${errText.substring(0, 50)}`);
-      }
-      const nwsData = await nwsRes.json();
-
-      return processData(st, obsList, nwsData);
-    } catch (e) {
-      console.error(`Failed to fetch ${st.id}:`, e);
-      return { id: st.id, name: st.name, error: true, errMsg: e.message };
-    }
-  }
-
-  function processData(st, obsList, nwsData) {
     const nowMs = Date.now();
     const todayStr = getStationDateString(nowMs, st.tz);
     const yesterdayStr = getStationDateString(nowMs - 86400000, st.tz);
     const tmrwStr = getStationDateString(nowMs + 86400000, st.tz);
 
-    function extractTimeMs(obs) {
-      if (!obs) return null;
-      if (typeof obs.obsTime === 'number') return obs.obsTime * 1000;
-      if (typeof obs.reportTime === 'string') return Date.parse(obs.reportTime);
-      if (typeof obs.obsTime === 'string') return Date.parse(obs.obsTime);
-      return null;
-    }
+    // Prepare all API calls in parallel
+    const pAWC = safeFetch(`/api/awc_metar?station=${st.id}`, false);
+    const pNWS = safeFetch(`/api/nws_forecast?lat=${st.lat}&lon=${st.lon}`);
+    const pWU = safeFetch(`/api/wu_forecast?lat=${st.lat}&lon=${st.lon}`);
+    const pOM = safeFetch(`https://api.open-meteo.com/v1/forecast?latitude=${st.lat}&longitude=${st.lon}&daily=temperature_2m_max&past_days=1&forecast_days=2&temperature_unit=fahrenheit&timezone=${encodeURIComponent(st.tz)}`);
 
-    // -- A: Current METAR --
-    const latestMetar = obsList.length > 0 ? obsList[0] : null;
-    let currentTempF = "—", windStr = "—", cloudsStr = "—", obsTimeStr = "—";
-    
-    if (latestMetar) {
-      currentTempF = latestMetar.temp != null ? toF(latestMetar.temp).toFixed(1) : "—";
-      
-      const windSpdMph = latestMetar.wspd != null ? Math.round(latestMetar.wspd * 1.15078) : 0; 
-      windStr = `${latestMetar.wdir || 0}° @ ${windSpdMph} mph`;
-      if (latestMetar.wgst) windStr += ` (G ${Math.round(latestMetar.wgst * 1.15078)})`;
-      
-      cloudsStr = formatClouds(latestMetar.clouds);
-      
-      const latestMs = extractTimeMs(latestMetar);
-      obsTimeStr = latestMs ? getStationTimeString(latestMs, st.tz) : "—";
-    }
+    const results = await Promise.allSettled([pAWC, pNWS, pWU, pOM]);
 
-    // -- B: Calculate Yesterday's Actual METAR High --
-    let yestMaxC = -999;
-    let yestMaxTime = null;
+    // 1. Process AWC (Current METAR & Yest Actual)
+    let currentTempF = "—", obsTimeStr = "—", yestActualF = "—", yestActualTime = "—";
+    if (results[0].status === "fulfilled") {
+       let awcData = [];
+       try { awcData = JSON.parse(results[0].value); } catch(e){}
+       let obsList = Array.isArray(awcData) ? awcData : (awcData.data || []);
+       
+       const latest = obsList[0];
+       if (latest && latest.temp != null) {
+           currentTempF = toF(latest.temp).toFixed(1);
+           const latestMs = extractTimeMs(latest);
+           obsTimeStr = latestMs ? getStationTimeString(latestMs, st.tz) : "—";
+       }
 
-    obsList.forEach(obs => {
-      const obsMs = extractTimeMs(obs);
-      if (!obsMs || obs.temp == null) return; 
-
-      if (getStationDateString(obsMs, st.tz) === yesterdayStr) {
-        if (obs.temp > yestMaxC) {
-          yestMaxC = obs.temp;
-          yestMaxTime = obsMs;
-        }
-      }
-    });
-
-    const yestActualF = yestMaxC !== -999 ? toF(yestMaxC) : null;
-    const yestTimeStr = yestMaxTime ? getStationTimeString(yestMaxTime, st.tz) : "—";
-
-    // -- C: Forecasts (NWS Gridpoint) --
-    let todayForecastF = -Infinity;
-    let tmrwForecastF = -Infinity;
-    
-    if (nwsData.properties && nwsData.properties.periods) {
-       for(const p of nwsData.properties.periods) {
-          const tsMs = Date.parse(p.startTime);
-          const pDayStr = getStationDateString(tsMs, st.tz);
-          
-          if (pDayStr === todayStr && p.temperature > todayForecastF) {
-              todayForecastF = p.temperature;
-          }
-          if (pDayStr === tmrwStr && p.temperature > tmrwForecastF) {
-              tmrwForecastF = p.temperature;
-          }
+       let yestMaxC = -999, yMaxTime = null;
+       obsList.forEach(obs => {
+         const ms = extractTimeMs(obs);
+         if (ms && obs.temp != null && getStationDateString(ms, st.tz) === yesterdayStr) {
+           if (obs.temp > yestMaxC) { yestMaxC = obs.temp; yMaxTime = ms; }
+         }
+       });
+       if (yestMaxC !== -999) {
+           yestActualF = toF(yestMaxC).toFixed(1);
+           yestActualTime = getStationTimeString(yMaxTime, st.tz);
        }
     }
 
-    // NWS doesn't provide historical forecasts via this API easily. 
-    // We will show N/A for Yesterday's Forecast in this pure NWS build.
-    let yestForecastF = null; 
-    let deltaStr = "N/A";
-    let deltaClass = "";
+    // 2. Process NWS
+    let nwsToday = "—", nwsTmrw = "—";
+    if (results[1].status === "fulfilled") {
+        let maxT = -999, maxTm = -999;
+        const periods = results[1].value.properties?.periods || [];
+        periods.forEach(p => {
+            const dateStr = getStationDateString(Date.parse(p.startTime), st.tz);
+            if (dateStr === todayStr && p.temperature > maxT) maxT = p.temperature;
+            if (dateStr === tmrwStr && p.temperature > maxTm) maxTm = p.temperature;
+        });
+        if (maxT !== -999) nwsToday = maxT.toFixed(1);
+        if (maxTm !== -999) nwsTmrw = maxTm.toFixed(1);
+    } else { nwsToday = "Err"; nwsTmrw = "Err"; }
+
+    // 3. Process WUnderground
+    let wuToday = "—", wuTmrw = "—";
+    if (results[2].status === "fulfilled") {
+        let maxT = -999, maxTm = -999;
+        const tArr = results[2].value.temperature || [];
+        const timeArr = results[2].value.validTimeLocal || [];
+        for(let i=0; i<tArr.length; i++) {
+            // WU gives format "2026-04-12T08:00:00-0700"
+            const dateStr = timeArr[i].split("T")[0]; 
+            if (dateStr === todayStr && tArr[i] > maxT) maxT = tArr[i];
+            if (dateStr === tmrwStr && tArr[i] > maxTm) maxTm = tArr[i];
+        }
+        if (maxT !== -999) wuToday = maxT.toFixed(1);
+        if (maxTm !== -999) wuTmrw = maxTm.toFixed(1);
+    } else { wuToday = "Err"; wuTmrw = "Err"; }
+
+    // 4. Process Open-Meteo (includes Yest Forecast)
+    let omYest = "—", omToday = "—", omTmrw = "—";
+    if (results[3].status === "fulfilled") {
+        const d = results[3].value.daily || {};
+        const days = d.time || [], temps = d.temperature_2m_max || [];
+        for(let i=0; i<days.length; i++) {
+            if (days[i] === yesterdayStr) omYest = temps[i].toFixed(1);
+            if (days[i] === todayStr) omToday = temps[i].toFixed(1);
+            if (days[i] === tmrwStr) omTmrw = temps[i].toFixed(1);
+        }
+    } else { omYest = "Err"; omToday = "Err"; omTmrw = "Err"; }
 
     return {
       id: st.id, name: st.name, tz: st.tz,
-      currentTempF, windStr, cloudsStr, obsTimeStr,
-      todayForecastF: todayForecastF !== -Infinity ? todayForecastF.toFixed(1) : "—",
-      tmrwForecastF: tmrwForecastF !== -Infinity ? tmrwForecastF.toFixed(1) : "—",
-      yestActualF: yestActualF != null ? yestActualF.toFixed(1) : "—",
-      yestTimeStr,
-      yestForecastF: yestForecastF != null ? yestForecastF.toFixed(1) : "N/A (NWS)",
-      deltaStr, deltaClass
+      currentTempF, obsTimeStr,
+      yestActualF, yestActualTime,
+      nwsToday, nwsTmrw, wuToday, wuTmrw, omToday, omTmrw, omYest
     };
   }
 
   function renderCard(data) {
-    if (data.error) {
-      return `
-      <div class="card" style="border-left: 4px solid #ef4444;">
-        <div class="st-header">
-          <div class="st-name">${data.id} - ${data.name}</div>
-        </div>
-        <div style="color: #ef4444; font-weight: 600; font-size: 14px;">Error Loading Data</div>
-        <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">Reason: ${data.errMsg}</div>
-      </div>`;
-    }
-
     return `
       <div class="card">
         <div class="st-header">
@@ -210,46 +188,64 @@
           <div class="st-tz">${data.tz.split('/')[1].replace('_', ' ')} Time</div>
         </div>
 
-        <div class="section-title">Current METAR (${data.obsTimeStr})</div>
-        <div class="data-row">
-          <span>Temperature</span>
-          <span class="val-large">${data.currentTempF}°F</span>
-        </div>
-        <div class="data-row clouds">
-          <span>Wind: ${data.windStr}</span>
-          <span>${data.cloudsStr}</span>
+        <div class="metar-section">
+            <div class="section-title">Official Current METAR (@ ${data.obsTimeStr})</div>
+            <div class="metar-row">
+                <span style="font-weight: 600;">Current Temp:</span>
+                <span class="val-large">${data.currentTempF}°F</span>
+            </div>
         </div>
 
-        <div class="section-title">NWS Official Forecast</div>
-        <div class="data-row">
-          <span>Today's Expected High</span>
-          <span class="val" style="color: #9333ea;">${data.todayForecastF}°F</span>
-        </div>
-        <div class="data-row">
-          <span>Tomorrow's Expected High</span>
-          <span class="val">${data.tmrwForecastF}°F</span>
+        <div class="section-title" style="margin-top: 18px;">Prior Day Review</div>
+        <div class="metar-row" style="font-size: 14px; margin-bottom: 6px;">
+            <span style="opacity:0.8;">Actual Settlement <i>(@ ${data.yestActualTime})</i></span>
+            <span style="font-weight: 600;">${data.yestActualF}°F</span>
         </div>
 
-        <div class="section-title">Yesterday's Review</div>
-        <div class="data-row">
-          <span>Actual High <i>(@ ${data.yestTimeStr})</i></span>
-          <span class="val">${data.yestActualF}°F</span>
-        </div>
-        <div class="data-row">
-          <span style="opacity:0.6;">Forecasted High</span>
-          <span class="val" style="opacity:0.6;">${data.yestForecastF}</span>
-        </div>
-        <div class="data-row" style="margin-top: 4px; padding-top: 4px; border-top: 1px dashed rgba(127,127,127,0.2);">
-          <span style="opacity:0.6;">Model Delta</span>
-          <span class="val ${data.deltaClass}">${data.deltaStr}</span>
-        </div>
+        <div class="section-title" style="margin-top: 18px;">Forecast Model Consensus</div>
+        <table class="forecast-table">
+            <thead>
+                <tr>
+                    <th class="left">Source</th>
+                    <th>Yesterday</th>
+                    <th>Today</th>
+                    <th>Tomorrow</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="left">AWC (METAR)<span class="badge">Truth</span></td>
+                    <td>${data.yestActualF}</td>
+                    <td style="opacity: 0.4;">—</td>
+                    <td style="opacity: 0.4;">—</td>
+                </tr>
+                <tr>
+                    <td class="left">NWS Official</td>
+                    <td style="opacity: 0.4;">N/A</td>
+                    <td>${data.nwsToday}</td>
+                    <td>${data.nwsTmrw}</td>
+                </tr>
+                <tr>
+                    <td class="left">WUnderground</td>
+                    <td style="opacity: 0.4;">N/A</td>
+                    <td>${data.wuToday}</td>
+                    <td>${data.wuTmrw}</td>
+                </tr>
+                <tr>
+                    <td class="left">Open-Meteo</td>
+                    <td>${data.omYest}</td>
+                    <td>${data.omToday}</td>
+                    <td>${data.omTmrw}</td>
+                </tr>
+            </tbody>
+        </table>
       </div>
     `;
   }
 
   async function refreshAll() {
     const container = document.getElementById('dashboard');
-    container.innerHTML = '<div style="opacity: 0.6; font-weight: 600;">Loading NWS & METAR feeds...</div>';
+    container.innerHTML = '<div style="opacity: 0.6; font-weight: 600;">Fetching multi-source consensus...</div>';
     
     const results = await Promise.all(STATIONS.map(st => fetchStationData(st)));
     container.innerHTML = results.map(renderCard).join('');
