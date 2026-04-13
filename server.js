@@ -8,42 +8,56 @@ const PORT = process.env.PORT || 5179;
 app.use(express.json());
 app.use(express.static(process.cwd(), { extensions: ["html"] }));
 
-// --- FORECAST HISTORY DATABASE ---
+// --- FORECAST HISTORY DATABASE (RACE-CONDITION FREE) ---
 const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || process.cwd();
 const CACHE_FILE = path.join(DATA_DIR, "forecast_history.json");
 
-async function loadHistory() {
+// 1. Hold the database perfectly in memory
+let memoryDB = {};
+
+// 2. Load it once on server start
+async function initDB() {
   try {
     const data = await fs.readFile(CACHE_FILE, "utf-8");
-    return JSON.parse(data);
+    memoryDB = JSON.parse(data);
+    console.log("✅ History Database Loaded");
   } catch (e) {
-    return {};
+    console.log("⚠️ No history file found. Starting fresh.");
+    memoryDB = {};
   }
 }
+initDB();
 
-async function saveHistory(data) {
-  try { await fs.writeFile(CACHE_FILE, JSON.stringify(data, null, 2)); } 
-  catch (e) { console.error("Failed to write history cache:", e); }
-}
-
-app.get("/api/history", async (req, res) => {
-  res.json(await loadHistory());
+app.get("/api/history", (req, res) => {
+  res.json(memoryDB);
 });
 
-app.post("/api/history", async (req, res) => {
+// 3. Update memory instantly, but "debounce" the disk write to prevent file corruption
+let writeTimeout = null;
+
+app.post("/api/history", (req, res) => {
   const { stid, dateStr, model, temp, time } = req.body;
   if (!stid || !dateStr || !model || !temp) return res.status(400).json({ error: "Missing fields" });
 
-  const history = await loadHistory();
-  if (!history[stid]) history[stid] = {};
-  if (!history[stid][dateStr]) history[stid][dateStr] = {};
-  
-  history[stid][dateStr][model] = { temp, time };
-  await saveHistory(history);
+  // Update RAM synchronously (No race conditions)
+  if (!memoryDB[stid]) memoryDB[stid] = {};
+  if (!memoryDB[stid][dateStr]) memoryDB[stid][dateStr] = {};
+  memoryDB[stid][dateStr][model] = { temp, time };
+
+  // Wait 2 seconds after the *last* API call to write the final file to disk
+  if (writeTimeout) clearTimeout(writeTimeout);
+  writeTimeout = setTimeout(async () => {
+    try {
+      await fs.writeFile(CACHE_FILE, JSON.stringify(memoryDB, null, 2));
+    } catch (e) {
+      console.error("Failed to write history cache:", e);
+    }
+  }, 2000);
+
   res.json({ success: true });
 });
 
-// --- API PROXIES & QUALITATIVE SCRAPERS ---
+// --- API PROXIES ---
 const apiCache = {};
 const CACHE_TTL_MS = 60 * 1000; 
 
@@ -99,28 +113,23 @@ app.get("/api/wu_forecast", async (req, res) => {
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
-// NEW: Qualitative NWS Area Forecast Discussion Scraper
 app.get("/api/nws_afd", async (req, res) => {
   const { lat, lon, station } = req.query;
   if (!lat || !lon) return res.status(400).json({ error: "Missing lat/lon" });
 
   try {
     const headers = { "User-Agent": "Mozilla/5.0 (MarketPredictionApp; dev@example.com)", "Accept": "application/geo+json" };
-    
-    // 1. Identify the Local Forecasting Office
     let pRes = await getCachedOrFetch(`nws_points_${lat}_${lon}`, `https://api.weather.gov/points/${lat},${lon}`, headers);
     if (!pRes.ok) return res.status(pRes.status).send(pRes.body);
     const wfo = JSON.parse(pRes.body).properties.cwa;
     if (!wfo) throw new Error("No WFO found");
 
-    // 2. Fetch the ID of the latest AFD text product
     let afdListRes = await getCachedOrFetch(`nws_afd_list_${wfo}`, `https://api.weather.gov/products/types/AFD/locations/${wfo}`, headers);
     if (!afdListRes.ok) throw new Error("Failed to get AFD list");
     const afdListData = JSON.parse(afdListRes.body);
     const latestAfdUrl = afdListData["@graph"]?.[0]?.["@id"];
     if (!latestAfdUrl) throw new Error("No AFD products found");
 
-    // 3. Fetch the raw text and extract sentences
     let afdRes = await getCachedOrFetch(`nws_afd_product_${latestAfdUrl}`, latestAfdUrl, headers);
     if (!afdRes.ok) throw new Error("Failed to get AFD product");
     
@@ -134,15 +143,10 @@ app.get("/api/nws_afd", async (req, res) => {
     const regex = new RegExp(`(temperatur|highs?|lows?|warm|cool|heat|bust|overachiev|${stidSearch})`, 'i');
     
     for (let s of sentences) {
-        if (regex.test(s) && s.length > 15 && s.length < 300) {
-            insights.push(s.trim());
-        }
+        if (regex.test(s) && s.length > 15 && s.length < 300) insights.push(s.trim());
     }
-    
     res.json({ insights: insights.slice(0, 3) });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
+  } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
 app.listen(PORT, () => console.log(`🌤️ Dashboard running at http://localhost:${PORT}`));
