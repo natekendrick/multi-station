@@ -51,7 +51,6 @@
 
 <script>
   let STATIONS = [
-    { id: "KBOS", name: "Boston", lat: 42.3656, lon: -71.0096 },
     { id: "KLGA", name: "LaGuardia", lat: 40.7769, lon: -73.8740 },
     { id: "KDCA", name: "Washington Reagan", lat: 38.8512, lon: -77.0402 },
     { id: "KATL", name: "Atlanta", lat: 33.6407, lon: -84.4277 },
@@ -65,7 +64,16 @@
     { id: "KLAS", name: "Las Vegas", lat: 36.0840, lon: -115.1536 },
     { id: "KLAX", name: "Los Angeles", lat: 33.9416, lon: -118.4085 },
     { id: "KSFO", name: "San Francisco", lat: 37.6196, lon: -122.3656 },
-    { id: "KSEA", name: "Seattle", lat: 47.4502, lon: -122.3088 }
+    { id: "KSEA", name: "Seattle", lat: 47.4502, lon: -122.3088 },
+    // NEW STATIONS
+    { id: "KPHL", name: "Philadelphia", lat: 39.8729, lon: -75.2437 },
+    { id: "KJAX", name: "Jacksonville", lat: 30.4941, lon: -81.6879 },
+    { id: "KCLT", name: "Charlotte", lat: 35.2140, lon: -80.9431 },
+    { id: "KBNA", name: "Nashville", lat: 36.1263, lon: -86.6774 },
+    { id: "KMSP", name: "Minneapolis", lat: 44.8848, lon: -93.2223 },
+    { id: "KDFW", name: "Dallas/Fort Worth", lat: 32.8998, lon: -97.0403 },
+    { id: "KOKC", name: "Oklahoma City", lat: 35.3931, lon: -97.6008 },
+    { id: "KSAT", name: "San Antonio", lat: 29.5337, lon: -98.4698 }
   ];
 
   STATIONS.sort((a, b) => b.lon - a.lon);
@@ -183,7 +191,6 @@
         if (maxT !== -999) { nwsToday = maxT.toFixed(1); nwsTodayTime = getPTMilitaryTime(maxTTm); }
         if (maxTm !== -999) { nwsTmrw = maxTm.toFixed(1); nwsTmrwTime = getPTMilitaryTime(maxTmTm); }
 
-        // API Decay Protection for NWS (Preserves true HoD if hours drop off)
         const nwsTodayCache = todayHistory["NWS"];
         if (nwsTodayCache && nwsTodayCache.temp !== "—" && nwsTodayCache.time && periods.length > 0) {
             let firstPtTime = getPTMilitaryTime(Date.parse(periods[0].startTime));
@@ -194,7 +201,7 @@
         }
     } else { nwsToday = "Err"; nwsTmrw = "Err"; }
 
-    // 3. Process WUnderground
+    // 3. Process WU
     let wuToday = null, wuTodayTime = null, wuTmrw = null, wuTmrwTime = null;
     if (results[2].status === "fulfilled") {
         let maxT = -999, maxTTm = null, maxTm = -999, maxTmTm = null;
@@ -209,7 +216,6 @@
         if (maxT !== -999) { wuToday = maxT.toFixed(1); wuTodayTime = getPTMilitaryTime(maxTTm); }
         if (maxTm !== -999) { wuTmrw = maxTm.toFixed(1); wuTmrwTime = getPTMilitaryTime(maxTmTm); }
 
-        // API Decay Protection for WU (Preserves true HoD if hours drop off)
         const wuTodayCache = todayHistory["WU"];
         if (wuTodayCache && wuTodayCache.temp !== "—" && wuTodayCache.time && timeArr.length > 0) {
             let firstPtTime = getPTMilitaryTime(Date.parse(timeArr[0]));
@@ -250,7 +256,6 @@
       wuToday, wuTodayTime, wuTmrw, wuTmrwTime, 
       omToday, omTodayTime, omTmrw, omTmrwTime, omYest, omYestTime,
       
-      // WU and OM use their respective DB caches
       wuYestTemp: yestHistory["WU"] ? yestHistory["WU"].temp : "—", wuYestTime: yestHistory["WU"] ? yestHistory["WU"].time : "",
       
       nwsTodayCache: todayHistory["NWS"],
