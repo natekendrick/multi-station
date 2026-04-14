@@ -34,6 +34,7 @@
     table.forecast-table td.left { text-align: left; font-weight: 600; opacity: 0.9; }
 
     .time-sub { display: block; font-size: 10px; opacity: 0.6; font-weight: 400; margin-top: 2px; }
+    .badge { font-size: 9px; padding: 2px 4px; border-radius: 4px; background: rgba(127,127,127,0.2); margin-left: 4px; text-transform: uppercase; letter-spacing: 0.05em;}
   </style>
 </head>
 <body>
@@ -130,6 +131,10 @@
     const yesterdayStr = getPTDateString(nowMs - 86400000);
     const tmrwStr = getPTDateString(nowMs + 86400000);
 
+    const stHistory = globalHistoryDB[st.id] || {};
+    const yestHistory = stHistory[yesterdayStr] || {};
+    const todayHistory = stHistory[todayStr] || {};
+
     const pAWC = safeFetch(`/api/awc_metar?station=${st.id}`, false);
     const pNWS = safeFetch(`/api/nws_forecast?lat=${st.lat}&lon=${st.lon}`);
     const pWU = safeFetch(`/api/wu_forecast?lat=${st.lat}&lon=${st.lon}`);
@@ -177,9 +182,19 @@
         });
         if (maxT !== -999) { nwsToday = maxT.toFixed(1); nwsTodayTime = getPTMilitaryTime(maxTTm); }
         if (maxTm !== -999) { nwsTmrw = maxTm.toFixed(1); nwsTmrwTime = getPTMilitaryTime(maxTmTm); }
+
+        // API Decay Protection for NWS (Preserves true HoD if hours drop off)
+        const nwsTodayCache = todayHistory["NWS"];
+        if (nwsTodayCache && nwsTodayCache.temp !== "—" && nwsTodayCache.time && periods.length > 0) {
+            let firstPtTime = getPTMilitaryTime(Date.parse(periods[0].startTime));
+            if (firstPtTime > nwsTodayCache.time && parseFloat(nwsTodayCache.temp) > maxT) {
+                nwsToday = parseFloat(nwsTodayCache.temp).toFixed(1);
+                nwsTodayTime = nwsTodayCache.time;
+            }
+        }
     } else { nwsToday = "Err"; nwsTmrw = "Err"; }
 
-    // 3. Process WU
+    // 3. Process WUnderground
     let wuToday = null, wuTodayTime = null, wuTmrw = null, wuTmrwTime = null;
     if (results[2].status === "fulfilled") {
         let maxT = -999, maxTTm = null, maxTm = -999, maxTmTm = null;
@@ -193,6 +208,16 @@
         }
         if (maxT !== -999) { wuToday = maxT.toFixed(1); wuTodayTime = getPTMilitaryTime(maxTTm); }
         if (maxTm !== -999) { wuTmrw = maxTm.toFixed(1); wuTmrwTime = getPTMilitaryTime(maxTmTm); }
+
+        // API Decay Protection for WU (Preserves true HoD if hours drop off)
+        const wuTodayCache = todayHistory["WU"];
+        if (wuTodayCache && wuTodayCache.temp !== "—" && wuTodayCache.time && timeArr.length > 0) {
+            let firstPtTime = getPTMilitaryTime(Date.parse(timeArr[0]));
+            if (firstPtTime > wuTodayCache.time && parseFloat(wuTodayCache.temp) > maxT) {
+                wuToday = parseFloat(wuTodayCache.temp).toFixed(1);
+                wuTodayTime = wuTodayCache.time;
+            }
+        }
     } else { wuToday = "Err"; wuTmrw = "Err"; }
 
     // 4. Process OM
@@ -218,10 +243,6 @@
     saveForecastToServer(st.id, todayStr, "WU", wuToday, wuTodayTime);
     saveForecastToServer(st.id, todayStr, "OM", omToday, omTodayTime);
 
-    const stHistory = globalHistoryDB[st.id] || {};
-    const yestHistory = stHistory[yesterdayStr] || {};
-    const todayHistory = stHistory[todayStr] || {};
-
     return {
       id: st.id, name: st.name,
       currentTempF, obsTimeStr, yestActualF, yestActualTime,
@@ -229,7 +250,7 @@
       wuToday, wuTodayTime, wuTmrw, wuTmrwTime, 
       omToday, omTodayTime, omTmrw, omTmrwTime, omYest, omYestTime,
       
-      nwsYestTemp: yestHistory["NWS"] ? yestHistory["NWS"].temp : "—", nwsYestTime: yestHistory["NWS"] ? yestHistory["NWS"].time : "",
+      // WU and OM use their respective DB caches
       wuYestTemp: yestHistory["WU"] ? yestHistory["WU"].temp : "—", wuYestTime: yestHistory["WU"] ? yestHistory["WU"].time : "",
       
       nwsTodayCache: todayHistory["NWS"],
@@ -251,10 +272,6 @@
                 <span style="font-weight: 600;">Current Temp:</span>
                 <span class="val-large">${data.currentTempF}°F</span>
             </div>
-            <div class="metar-row" style="font-size: 13px; opacity: 0.8; margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(127,127,127,0.2);">
-                <span>Yest. Actual Settlement:</span>
-                <span style="font-weight: 600;">${data.yestActualF}°F (@ ${data.yestActualTime} PT)</span>
-            </div>
         </div>
 
         <div class="section-title" style="margin-top: 18px;">Forecast Model Consensus</div>
@@ -269,8 +286,8 @@
             </thead>
             <tbody>
                 <tr>
-                    <td class="left">NWS Official</td>
-                    <td>${formatCell(data.nwsYestTemp, data.nwsYestTime)}</td>
+                    <td class="left">NWS <span class="badge">Actual</span></td>
+                    <td>${formatCell(data.yestActualF, data.yestActualTime)}</td>
                     <td>${formatTodayCell(data.nwsToday, data.nwsTodayTime, data.nwsTodayCache)}</td>
                     <td>${formatCell(data.nwsTmrw, data.nwsTmrwTime)}</td>
                 </tr>
@@ -310,7 +327,7 @@
   }
 
   refreshAll();
-  // Set to auto-refresh exactly every 10 minutes (600,000 milliseconds)
+  // Auto-refresh exactly every 10 minutes (600,000 ms)
   setInterval(refreshAll, 10 * 60 * 1000);
 </script>
 </body>
