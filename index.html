@@ -9,10 +9,29 @@
     body { font-family: system-ui, -apple-system, sans-serif; margin: 20px; line-height: 1.4; background: #f9fafb; color: #111827; }
     @media (prefers-color-scheme: dark) { body { background: #111827; color: #f9fafb; } }
 
-    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    /* --- BANNER STYLES --- */
+    #alertBanner { 
+      display: none; 
+      background-color: #f59e0b; 
+      color: #fff; 
+      padding: 16px 20px; 
+      margin-bottom: 20px; 
+      border-radius: 8px; 
+      font-size: 14px; 
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
+    }
+    #alertBanner .close-btn { float: right; cursor: pointer; opacity: 0.8; font-size: 18px; font-weight: bold; }
+    #alertBanner .close-btn:hover { opacity: 1; }
+    .alert-item { margin-top: 6px; font-weight: 500; }
+    @media (prefers-color-scheme: dark) { #alertBanner { background-color: #d97706; } }
+
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
     h1 { margin: 0; font-size: 24px; }
+    .btn-group { display: flex; gap: 8px; }
     button { padding: 8px 16px; border-radius: 8px; border: 1px solid #d1d5db; background: transparent; cursor: pointer; color: inherit; font-weight: 600; }
     button:hover { background: rgba(127,127,127,0.1); }
+    #notifyBtn { border-color: #10b981; color: #10b981; }
+    #notifyBtn:hover { background: rgba(16, 185, 129, 0.1); }
 
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 16px; }
     .card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
@@ -39,12 +58,17 @@
 </head>
 <body>
 
+  <div id="alertBanner"></div>
+
   <header>
     <div>
       <h1>Multi-station Dashboard</h1>
       <div style="font-size: 13px; opacity: 0.7; margin-top: 4px;" id="refreshTimestamp">Awaiting refresh...</div>
     </div>
-    <button onclick="refreshAll()">Refresh Data</button>
+    <div class="btn-group">
+      <button id="notifyBtn" onclick="enableNotifications()">🔔 Enable Alerts</button>
+      <button onclick="refreshAll()">Refresh Data</button>
+    </div>
   </header>
 
   <div class="grid" id="dashboard"></div>
@@ -65,7 +89,6 @@
     { id: "KLAX", name: "Los Angeles", lat: 33.9416, lon: -118.4085 },
     { id: "KSFO", name: "San Francisco", lat: 37.6196, lon: -122.3656 },
     { id: "KSEA", name: "Seattle", lat: 47.4502, lon: -122.3088 },
-    // NEW STATIONS
     { id: "KPHL", name: "Philadelphia", lat: 39.8729, lon: -75.2437 },
     { id: "KJAX", name: "Jacksonville", lat: 30.4941, lon: -81.6879 },
     { id: "KCLT", name: "Charlotte", lat: 35.2140, lon: -80.9431 },
@@ -79,6 +102,8 @@
   STATIONS.sort((a, b) => b.lon - a.lon);
 
   const toF = (c) => (c * 9/5) + 32;
+
+  let activeAlerts = []; // Array to hold intra-day shift alerts for the banner
 
   function getPTDateString(dateMs) {
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dateMs));
@@ -108,6 +133,45 @@
     try {
       fetch('/api/history', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stid, dateStr, model, temp, time }) });
     } catch (e) { console.error("Failed to save to server database", e); }
+  }
+
+  // --- NOTIFICATION & BANNER LOGIC ---
+  function enableNotifications() {
+    if (!("Notification" in window)) {
+      alert("This browser does not support desktop notifications.");
+    } else if (Notification.permission === "granted") {
+      alert("Push notifications are already enabled and active!");
+    } else if (Notification.permission !== "denied") {
+      Notification.requestPermission().then((permission) => {
+        if (permission === "granted") {
+            new Notification("Trading Alerts Enabled", { body: "You will be notified when forecasts shift by 1 degree or more." });
+        }
+      });
+    }
+  }
+
+  function checkAndNotify(stId, stName, dateStr, model, currentTemp, initialTemp) {
+    if (!currentTemp || !initialTemp || currentTemp === "Err" || currentTemp === "—") return;
+    
+    const diff = parseFloat(currentTemp) - parseFloat(initialTemp);
+    
+    // If the shift is 1 degree or larger
+    if (Math.abs(diff) >= 1.0) {
+        const sign = diff > 0 ? "+" : "";
+        const bodyTxt = `<strong>${stName}</strong> (${model}) shifted ${sign}${diff.toFixed(1)}°F to <strong>${currentTemp}°F</strong> (was ${parseFloat(initialTemp).toFixed(1)}°F)`;
+        
+        // 1. Add to Banner Array
+        activeAlerts.push(bodyTxt);
+
+        // 2. Handle Browser Push Notification
+        const alertKey = `alert_${stId}_${dateStr}_${model}_${currentTemp}`;
+        if (!localStorage.getItem(alertKey)) {
+            if (Notification.permission === "granted") {
+                new Notification(`🚨 ${stName} Forecast Alert`, { body: `${model} shifted ${sign}${diff.toFixed(1)}°F. New High: ${currentTemp}°F.` });
+            }
+            localStorage.setItem(alertKey, "true");
+        }
+    }
   }
 
   function formatCell(temp, time) {
@@ -245,6 +309,11 @@
         if (tmT !== -999) { omTmrw = tmT.toFixed(1); omTmrwTime = getPTMilitaryTime(tmTm); }
     } else { omYest = "Err"; omToday = "Err"; omTmrw = "Err"; }
 
+    // --- CHECK FOR ALERTS ---
+    if (todayHistory["NWS"] && todayHistory["NWS"].initialTemp) checkAndNotify(st.id, st.name, todayStr, "NWS Official", nwsToday, todayHistory["NWS"].initialTemp);
+    if (todayHistory["WU"] && todayHistory["WU"].initialTemp) checkAndNotify(st.id, st.name, todayStr, "WUnderground", wuToday, todayHistory["WU"].initialTemp);
+    if (todayHistory["OM"] && todayHistory["OM"].initialTemp) checkAndNotify(st.id, st.name, todayStr, "Open-Meteo", omToday, todayHistory["OM"].initialTemp);
+
     saveForecastToServer(st.id, todayStr, "NWS", nwsToday, nwsTodayTime);
     saveForecastToServer(st.id, todayStr, "WU", wuToday, wuTodayTime);
     saveForecastToServer(st.id, todayStr, "OM", omToday, omTodayTime);
@@ -317,8 +386,14 @@
   async function refreshAll() {
     const container = document.getElementById('dashboard');
     const timeEl = document.getElementById('refreshTimestamp');
+    const banner = document.getElementById('alertBanner');
     
-    container.innerHTML = '<div style="opacity: 0.6; font-weight: 600;">Fetching multi-source consensus...</div>';
+    // Clear out active alerts for the new refresh cycle
+    activeAlerts = [];
+    
+    if (!container.innerHTML) {
+        container.innerHTML = '<div style="opacity: 0.6; font-weight: 600;">Fetching multi-source consensus...</div>';
+    }
     timeEl.textContent = "Refreshing...";
 
     try {
@@ -328,7 +403,26 @@
     
     const results = await Promise.all(STATIONS.map(st => fetchStationData(st)));
     container.innerHTML = results.map(renderCard).join('');
+    
+    // Render the active alerts banner if any stations shifted >= 1.0 degree
+    if (activeAlerts.length > 0) {
+        let bannerHtml = `<span class="close-btn" onclick="document.getElementById('alertBanner').style.display='none'">✕</span>`;
+        bannerHtml += `<div style="margin-bottom: 8px; font-size: 16px;">⚠️ <strong>Active Forecast Shifts (≥ 1.0°F)</strong></div>`;
+        activeAlerts.forEach(alertText => {
+            bannerHtml += `<div class="alert-item">• ${alertText}</div>`;
+        });
+        banner.innerHTML = bannerHtml;
+        banner.style.display = 'block';
+    } else {
+        banner.style.display = 'none';
+    }
+
     timeEl.textContent = `Last refreshed: ${getPTMilitaryTime(Date.now())} PT`;
+  }
+
+  // Request notification permission immediately on load if not already granted/denied
+  if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
   }
 
   refreshAll();
