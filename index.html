@@ -50,17 +50,21 @@
 
 <script>
   let STATIONS = [
+    { id: "KBOS", name: "Boston", lat: 42.3656, lon: -71.0096 },
     { id: "KLGA", name: "LaGuardia", lat: 40.7769, lon: -73.8740 },
+    { id: "KDCA", name: "Washington Reagan", lat: 38.8512, lon: -77.0402 },
+    { id: "KATL", name: "Atlanta", lat: 33.6407, lon: -84.4277 },
+    { id: "KDTW", name: "Detroit", lat: 42.2121, lon: -83.3533 },
     { id: "KMDW", name: "Chicago Midway", lat: 41.7868, lon: -87.7522 },
-    { id: "KSFO", name: "San Francisco", lat: 37.6196, lon: -122.3656 },
-    { id: "KSEA", name: "Seattle", lat: 47.4502, lon: -122.3088 },
-    { id: "KLAX", name: "Los Angeles", lat: 33.9416, lon: -118.4085 },
-    { id: "KAUS", name: "Austin", lat: 30.1900, lon: -97.6687 },
     { id: "KMIA", name: "Miami", lat: 25.7959, lon: -80.2870 },
-    { id: "KLAS", name: "Las Vegas", lat: 36.0840, lon: -115.1536 },
-    { id: "KPHX", name: "Phoenix", lat: 33.4342, lon: -112.0116 },
     { id: "KHOU", name: "Houston Hobby", lat: 29.6454, lon: -95.2789 },
-    { id: "KATL", name: "Atlanta", lat: 33.6407, lon: -84.4277 }
+    { id: "KAUS", name: "Austin", lat: 30.1900, lon: -97.6687 },
+    { id: "KBKF", name: "Denver Buckley", lat: 39.7017, lon: -104.7517 },
+    { id: "KPHX", name: "Phoenix", lat: 33.4342, lon: -112.0116 },
+    { id: "KLAS", name: "Las Vegas", lat: 36.0840, lon: -115.1536 },
+    { id: "KLAX", name: "Los Angeles", lat: 33.9416, lon: -118.4085 },
+    { id: "KSFO", name: "San Francisco", lat: 37.6196, lon: -122.3656 },
+    { id: "KSEA", name: "Seattle", lat: 47.4502, lon: -122.3088 }
   ];
 
   STATIONS.sort((a, b) => b.lon - a.lon);
@@ -93,8 +97,6 @@
   async function saveForecastToServer(stid, dateStr, model, temp, time) {
     if (temp === "Err" || temp === "—" || temp == null) return;
     try {
-      // Intentionally NOT awaiting this to allow requests to run in parallel.
-      // The server.js debouncer handles the safety.
       fetch('/api/history', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stid, dateStr, model, temp, time }) });
     } catch (e) { console.error("Failed to save to server database", e); }
   }
@@ -102,6 +104,24 @@
   function formatCell(temp, time) {
       if (temp === "Err" || temp === "—" || temp == null) return "—";
       return `${temp}°F <span class="time-sub">@ ${time} PT</span>`;
+  }
+
+  function formatTodayCell(temp, time, cacheObj) {
+      if (temp === "Err" || temp === "—" || temp == null) return "—";
+      let cellHtml = `${temp}°F <span class="time-sub">@ ${time} PT</span>`;
+      
+      if (cacheObj && cacheObj.initialTemp) {
+          const diff = parseFloat(temp) - parseFloat(cacheObj.initialTemp);
+          if (Math.abs(diff) >= 0.1) {
+              const sign = diff > 0 ? "▲ +" : "▼ ";
+              const color = diff > 0 ? "#10b981" : "#ef4444"; 
+              
+              cellHtml += `<span style="display:block; font-size:11px; margin-top:4px; color:${color}; font-weight:700;" title="Morning forecast was ${cacheObj.initialTemp}°F">
+                ${sign}${diff.toFixed(1)}° <span style="font-weight:400; opacity:0.8;">(vs ${parseFloat(cacheObj.initialTemp).toFixed(1)}°)</span>
+              </span>`;
+          }
+      }
+      return cellHtml;
   }
 
   async function fetchStationData(st) {
@@ -114,11 +134,10 @@
     const pNWS = safeFetch(`/api/nws_forecast?lat=${st.lat}&lon=${st.lon}`);
     const pWU = safeFetch(`/api/wu_forecast?lat=${st.lat}&lon=${st.lon}`);
     const pOM = safeFetch(`https://api.open-meteo.com/v1/forecast?latitude=${st.lat}&longitude=${st.lon}&hourly=temperature_2m&past_days=1&forecast_days=2&temperature_unit=fahrenheit&timezone=America%2FLos_Angeles`);
-    const pAFD = safeFetch(`/api/nws_afd?lat=${st.lat}&lon=${st.lon}&station=${st.id}`);
 
-    const results = await Promise.allSettled([pAWC, pNWS, pWU, pOM, pAFD]);
+    const results = await Promise.allSettled([pAWC, pNWS, pWU, pOM]);
 
-    // 1. Process AWC (METAR & Yest Actual)
+    // 1. Process AWC
     let currentTempF = "—", obsTimeStr = "—", yestActualF = "—", yestActualTime = "—";
     if (results[0].status === "fulfilled") {
        let awcData = [];
@@ -160,7 +179,7 @@
         if (maxTm !== -999) { nwsTmrw = maxTm.toFixed(1); nwsTmrwTime = getPTMilitaryTime(maxTmTm); }
     } else { nwsToday = "Err"; nwsTmrw = "Err"; }
 
-    // 3. Process WUnderground
+    // 3. Process WU
     let wuToday = null, wuTodayTime = null, wuTmrw = null, wuTmrwTime = null;
     if (results[2].status === "fulfilled") {
         let maxT = -999, maxTTm = null, maxTm = -999, maxTmTm = null;
@@ -176,7 +195,7 @@
         if (maxTm !== -999) { wuTmrw = maxTm.toFixed(1); wuTmrwTime = getPTMilitaryTime(maxTmTm); }
     } else { wuToday = "Err"; wuTmrw = "Err"; }
 
-    // 4. Process Open-Meteo
+    // 4. Process OM
     let omYest = null, omYestTime = null, omToday = null, omTodayTime = null, omTmrw = null, omTmrwTime = null;
     if (results[3].status === "fulfilled") {
         const h = results[3].value.hourly || {};
@@ -195,27 +214,27 @@
         if (tmT !== -999) { omTmrw = tmT.toFixed(1); omTmrwTime = getPTMilitaryTime(tmTm); }
     } else { omYest = "Err"; omToday = "Err"; omTmrw = "Err"; }
 
-    // 5. Process Qualitative NWS AFD
-    let afdInsights = [];
-    if (results[4].status === "fulfilled") {
-        afdInsights = results[4].value.insights || [];
-    }
-
-    // Fire off memory saves
     saveForecastToServer(st.id, todayStr, "NWS", nwsToday, nwsTodayTime);
     saveForecastToServer(st.id, todayStr, "WU", wuToday, wuTodayTime);
+    saveForecastToServer(st.id, todayStr, "OM", omToday, omTodayTime);
 
     const stHistory = globalHistoryDB[st.id] || {};
     const yestHistory = stHistory[yesterdayStr] || {};
+    const todayHistory = stHistory[todayStr] || {};
 
     return {
       id: st.id, name: st.name,
-      currentTempF, obsTimeStr, yestActualF, yestActualTime, afdInsights,
+      currentTempF, obsTimeStr, yestActualF, yestActualTime,
       nwsToday, nwsTodayTime, nwsTmrw, nwsTmrwTime, 
       wuToday, wuTodayTime, wuTmrw, wuTmrwTime, 
       omToday, omTodayTime, omTmrw, omTmrwTime, omYest, omYestTime,
+      
       nwsYestTemp: yestHistory["NWS"] ? yestHistory["NWS"].temp : "—", nwsYestTime: yestHistory["NWS"] ? yestHistory["NWS"].time : "",
-      wuYestTemp: yestHistory["WU"] ? yestHistory["WU"].temp : "—", wuYestTime: yestHistory["WU"] ? yestHistory["WU"].time : ""
+      wuYestTemp: yestHistory["WU"] ? yestHistory["WU"].temp : "—", wuYestTime: yestHistory["WU"] ? yestHistory["WU"].time : "",
+      
+      nwsTodayCache: todayHistory["NWS"],
+      wuTodayCache: todayHistory["WU"],
+      omTodayCache: todayHistory["OM"]
     };
   }
 
@@ -238,14 +257,6 @@
             </div>
         </div>
 
-        <div class="section-title" style="margin-top: 18px;">Qualitative Feeds</div>
-        <div class="metar-row" style="font-size: 12px; display: block; margin-top: 8px;">
-            <span style="opacity:0.8; font-weight: 600; color: #9333ea;">NWS Forecaster Notes:</span>
-            <ul style="margin: 4px 0 0 0; padding-left: 20px; opacity: 0.85;">
-                ${data.afdInsights.length > 0 ? data.afdInsights.map(i => `<li style="margin-bottom: 4px;">${i}</li>`).join('') : `<li>No recent temperature notes found.</li>`}
-            </ul>
-        </div>
-
         <div class="section-title" style="margin-top: 18px;">Forecast Model Consensus</div>
         <table class="forecast-table">
             <thead>
@@ -260,19 +271,19 @@
                 <tr>
                     <td class="left">NWS Official</td>
                     <td>${formatCell(data.nwsYestTemp, data.nwsYestTime)}</td>
-                    <td>${formatCell(data.nwsToday, data.nwsTodayTime)}</td>
+                    <td>${formatTodayCell(data.nwsToday, data.nwsTodayTime, data.nwsTodayCache)}</td>
                     <td>${formatCell(data.nwsTmrw, data.nwsTmrwTime)}</td>
                 </tr>
                 <tr>
                     <td class="left">WUnderground</td>
                     <td>${formatCell(data.wuYestTemp, data.wuYestTime)}</td>
-                    <td>${formatCell(data.wuToday, data.wuTodayTime)}</td>
+                    <td>${formatTodayCell(data.wuToday, data.wuTodayTime, data.wuTodayCache)}</td>
                     <td>${formatCell(data.wuTmrw, data.wuTmrwTime)}</td>
                 </tr>
                 <tr>
                     <td class="left">Open-Meteo</td>
                     <td>${formatCell(data.omYest, data.omYestTime)}</td>
-                    <td>${formatCell(data.omToday, data.omTodayTime)}</td>
+                    <td>${formatTodayCell(data.omToday, data.omTodayTime, data.omTodayCache)}</td>
                     <td>${formatCell(data.omTmrw, data.omTmrwTime)}</td>
                 </tr>
             </tbody>
@@ -299,7 +310,8 @@
   }
 
   refreshAll();
-  setInterval(refreshAll, 5 * 60 * 1000);
+  // Set to auto-refresh exactly every 10 minutes (600,000 milliseconds)
+  setInterval(refreshAll, 10 * 60 * 1000);
 </script>
 </body>
 </html>
