@@ -121,9 +121,9 @@
   // --- MAGNITUDE COLORING ---
   function getMagnitudeColor(delta) {
       const absD = Math.abs(delta);
-      if (absD >= 3.0) return "#f59e0b"; // Orange (Huge Move)
-      if (absD >= 2.0) return "#8b5cf6"; // Purple (Big Move)
-      if (absD >= 1.0) return "#3b82f6"; // Blue (Standard Move)
+      if (absD >= 3.0) return "#f59e0b"; // Orange 
+      if (absD >= 2.0) return "#8b5cf6"; // Purple
+      if (absD >= 1.0) return "#3b82f6"; // Blue 
       return "inherit";
   }
 
@@ -163,7 +163,7 @@
   function getRecentShift(history, currentTemp) {
       if (!history || history.length === 0) return { str: "—", changed: false };
       
-      const cutoff = Date.now() - (35 * 60000); // Look back roughly 30-35 mins
+      const cutoff = Date.now() - (35 * 60000); 
       let anchor = history[0];
       
       for (let i = history.length - 1; i >= 0; i--) {
@@ -183,7 +183,6 @@
       };
   }
 
-  // Deduplicate and process alerts for a single station, storing its Longitude for geographic sorting later
   function processStationAlerts(stId, stName, stLon, todayStr, nwsTemp, nwsCache, wuTemp, wuCache, omTemp, omCache) {
       let stAlerts = [];
       
@@ -204,7 +203,6 @@
       evaluate("Open-Meteo", omTemp, omCache);
 
       if (stAlerts.length > 0) {
-          // Sort to find the highest absolute move. Tie breaker favors WUnderground.
           stAlerts.sort((a, b) => {
               const diffA = Math.abs(a.delta);
               const diffB = Math.abs(b.delta);
@@ -215,11 +213,6 @@
           });
           activeAlerts.push(stAlerts[0]); 
       }
-  }
-
-  function formatCell(temp, time) {
-      if (temp === "Err" || temp === "—" || temp == null) return "—";
-      return `${temp}°F <span class="time-sub">@ ${time} PT</span>`;
   }
 
   async function fetchStationData(st) {
@@ -236,8 +229,11 @@
     const pNWS = safeFetch(`/api/nws_forecast?lat=${st.lat}&lon=${st.lon}`);
     const pWU = safeFetch(`/api/wu_forecast?lat=${st.lat}&lon=${st.lon}`);
     const pOM = safeFetch(`https://api.open-meteo.com/v1/forecast?latitude=${st.lat}&longitude=${st.lon}&hourly=temperature_2m&past_days=1&forecast_days=2&temperature_unit=fahrenheit&timezone=auto&timeformat=unixtime`);
+    
+    // Fetch WU Current Observation
+    const pWUCurr = safeFetch(`/api/wu_current?lat=${st.lat}&lon=${st.lon}`);
 
-    const results = await Promise.allSettled([pAWC, pNWS, pWU, pOM]);
+    const results = await Promise.allSettled([pAWC, pNWS, pWU, pOM, pWUCurr]);
 
     // 1. Process AWC
     let currentTempF = "—", obsTimeStr = "—", yestActualF = "—", yestActualTime = "—";
@@ -290,7 +286,7 @@
         }
     } else { nwsToday = "Err"; nwsTmrw = "Err"; }
 
-    // 3. Process WU
+    // 3. Process WU Forecast
     let wuToday = null, wuTodayTime = null, wuTmrw = null, wuTmrwTime = null;
     if (results[2].status === "fulfilled") {
         let maxT = -999, maxTTm = null, maxTm = -999, maxTmTm = null;
@@ -334,10 +330,14 @@
         if (tmT !== -999) { omTmrw = tmT.toFixed(1); omTmrwTime = getPTMilitaryTime(tmTm); }
     } else { omYest = "Err"; omToday = "Err"; omTmrw = "Err"; }
 
-    // Generate alerts array with Longitude passed in for sorting
+    // 5. Process WU Current Observation
+    let wuCurrentTempF = "—";
+    if (results[4].status === "fulfilled" && results[4].value.temperature != null) {
+        wuCurrentTempF = results[4].value.temperature.toFixed(1);
+    }
+
     processStationAlerts(st.id, st.name, st.lon, todayStr, nwsToday, todayHistory["NWS"], wuToday, todayHistory["WU"], omToday, todayHistory["OM"]);
 
-    // Save Live Data
     await saveForecastToServer(st.id, todayStr, "NWS", nwsToday, nwsTodayTime);
     await saveForecastToServer(st.id, todayStr, "WU", wuToday, wuTodayTime);
     await saveForecastToServer(st.id, todayStr, "OM", omToday, omTodayTime);
@@ -345,15 +345,12 @@
     return {
       id: st.id, name: st.name,
       currentTempF, obsTimeStr, yestActualF, yestActualTime,
+      wuCurrentTempF,
       nwsToday, nwsTodayTime, nwsTmrw, nwsTmrwTime, 
       wuToday, wuTodayTime, wuTmrw, wuTmrwTime, 
       omToday, omTodayTime, omTmrw, omTmrwTime, omYest, omYestTime,
-      
       wuYestTemp: yestHistory["WU"] ? yestHistory["WU"].temp : "—", wuYestTime: yestHistory["WU"] ? yestHistory["WU"].time : "",
-      
-      nwsTodayCache: todayHistory["NWS"],
-      wuTodayCache: todayHistory["WU"],
-      omTodayCache: todayHistory["OM"]
+      nwsTodayCache: todayHistory["NWS"], wuTodayCache: todayHistory["WU"], omTodayCache: todayHistory["OM"]
     };
   }
 
@@ -386,9 +383,13 @@
         </div>
 
         <div class="metar-section">
-            <div class="section-title">Official METAR <span style="text-transform: none; font-weight: normal;">(@ ${data.obsTimeStr} PT)</span></div>
+            <div class="section-title">Current Observations</div>
+            <div class="metar-row" style="margin-bottom: 6px;">
+                <span style="font-weight: 600; opacity: 0.9;">WUnderground (Now):</span>
+                <span class="val-large" style="color: #ea580c;">${data.wuCurrentTempF}°F</span>
+            </div>
             <div class="metar-row">
-                <span style="font-weight: 600;">Current Temp:</span>
+                <span style="font-weight: 600; opacity: 0.9;">NWS METAR <span style="font-size: 11px; font-weight: normal; opacity: 0.7;">(@ ${data.obsTimeStr} PT)</span>:</span>
                 <span class="val-large">${data.currentTempF}°F</span>
             </div>
         </div>
@@ -448,9 +449,7 @@
     const results = await Promise.all(STATIONS.map(st => fetchStationData(st)));
     container.innerHTML = results.map(renderCard).join('');
     
-    // --- RENDER REFINED ALERTS TABLE ---
     if (activeAlerts.length > 0) {
-        // EXACT FIX: Sort East to West based on the longitude mapped during data fetching
         activeAlerts.sort((a, b) => b.lon - a.lon);
 
         let tableRows = activeAlerts.map(a => {

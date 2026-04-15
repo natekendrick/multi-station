@@ -44,7 +44,6 @@ app.post("/api/history", (req, res) => {
   let existing = memoryDB[stid][dateStr][model];
 
   if (!existing) {
-    // First time seeing it today: set initial and start the history array
     memoryDB[stid][dateStr][model] = { 
         temp, time, initialTemp: temp, 
         history: [{ ts: Date.now(), temp, time }] 
@@ -55,7 +54,6 @@ app.post("/api/history", (req, res) => {
     if (!existing.initialTemp) existing.initialTemp = temp; 
     if (!existing.history) existing.history = [{ ts: Date.now() - 600000, temp: existing.initialTemp, time }];
     
-    // Push current reading to history array (cap at 144 to prevent memory leaks, ~24hrs at 10m intervals)
     existing.history.push({ ts: Date.now(), temp, time });
     if (existing.history.length > 144) existing.history.shift();
   }
@@ -120,6 +118,17 @@ app.get("/api/wu_forecast", async (req, res) => {
   const url = `https://api.weather.com/v3/wx/forecast/hourly/2day?apiKey=e1f10a1e78da46f5b10a1e78da96f525&geocode=${lat},${lon}&format=json&units=e&language=en-US`;
   try {
     const { status, ok, body } = await getCachedOrFetch(`wu_forecast_${lat}_${lon}`, url);
+    if (!ok) return res.status(status).send(body);
+    res.setHeader("Content-Type", "application/json; charset=utf-8"); res.send(body);
+  } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+// NEW: WUnderground Live Observations API
+app.get("/api/wu_current", async (req, res) => {
+  const { lat, lon } = req.query;
+  const url = `https://api.weather.com/v3/wx/observations/current?apiKey=e1f10a1e78da46f5b10a1e78da96f525&geocode=${lat},${lon}&format=json&units=e&language=en-US`;
+  try {
+    const { status, ok, body } = await getCachedOrFetch(`wu_current_${lat}_${lon}`, url);
     if (!ok) return res.status(status).send(body);
     res.setHeader("Content-Type", "application/json; charset=utf-8"); res.send(body);
   } catch (e) { res.status(500).json({ error: String(e) }); }
