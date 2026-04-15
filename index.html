@@ -9,16 +9,9 @@
     body { font-family: system-ui, -apple-system, sans-serif; margin: 20px; line-height: 1.4; background: #f9fafb; color: #111827; }
     @media (prefers-color-scheme: dark) { body { background: #111827; color: #f9fafb; } }
 
-    /* --- BANNER STYLES --- */
     #alertBanner { 
-      display: none; 
-      background-color: #f59e0b; 
-      color: #fff; 
-      padding: 16px 20px; 
-      margin-bottom: 20px; 
-      border-radius: 8px; 
-      font-size: 14px; 
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
+      display: none; background-color: #f59e0b; color: #fff; padding: 16px 20px; 
+      margin-bottom: 20px; border-radius: 8px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
     }
     #alertBanner .close-btn { float: right; cursor: pointer; opacity: 0.8; font-size: 18px; font-weight: bold; }
     #alertBanner .close-btn:hover { opacity: 1; }
@@ -75,39 +68,42 @@
 
 <script>
   let STATIONS = [
-    { id: "KLGA", name: "LaGuardia", lat: 40.7769, lon: -73.8740 },
-    { id: "KDCA", name: "Washington Reagan", lat: 38.8512, lon: -77.0402 },
-    { id: "KATL", name: "Atlanta", lat: 33.6407, lon: -84.4277 },
-    { id: "KDTW", name: "Detroit", lat: 42.2121, lon: -83.3533 },
-    { id: "KMDW", name: "Chicago Midway", lat: 41.7868, lon: -87.7522 },
-    { id: "KMIA", name: "Miami", lat: 25.7959, lon: -80.2870 },
-    { id: "KHOU", name: "Houston Hobby", lat: 29.6454, lon: -95.2789 },
-    { id: "KAUS", name: "Austin", lat: 30.1900, lon: -97.6687 },
-    { id: "KBKF", name: "Denver Buckley", lat: 39.7017, lon: -104.7517 },
-    { id: "KPHX", name: "Phoenix", lat: 33.4342, lon: -112.0116 },
-    { id: "KLAS", name: "Las Vegas", lat: 36.0840, lon: -115.1536 },
-    { id: "KLAX", name: "Los Angeles", lat: 33.9416, lon: -118.4085 },
-    { id: "KSFO", name: "San Francisco", lat: 37.6196, lon: -122.3656 },
-    { id: "KSEA", name: "Seattle", lat: 47.4502, lon: -122.3088 },
-    { id: "KPHL", name: "Philadelphia", lat: 39.8729, lon: -75.2437 },
-    { id: "KJAX", name: "Jacksonville", lat: 30.4941, lon: -81.6879 },
-    { id: "KCLT", name: "Charlotte", lat: 35.2140, lon: -80.9431 },
-    { id: "KBNA", name: "Nashville", lat: 36.1263, lon: -86.6774 },
-    { id: "KMSP", name: "Minneapolis", lat: 44.8848, lon: -93.2223 },
-    { id: "KDFW", name: "Dallas/Fort Worth", lat: 32.8998, lon: -97.0403 },
-    { id: "KOKC", name: "Oklahoma City", lat: 35.3931, lon: -97.6008 },
-    { id: "KSAT", name: "San Antonio", lat: 29.5337, lon: -98.4698 }
+    { id: "KLGA", name: "LaGuardia", lat: 40.7769, lon: -73.8740, tz: "America/New_York" },
+    { id: "KDCA", name: "Washington Reagan", lat: 38.8512, lon: -77.0402, tz: "America/New_York" },
+    { id: "KATL", name: "Atlanta", lat: 33.6407, lon: -84.4277, tz: "America/New_York" },
+    { id: "KDTW", name: "Detroit", lat: 42.2121, lon: -83.3533, tz: "America/Detroit" },
+    { id: "KMDW", name: "Chicago Midway", lat: 41.7868, lon: -87.7522, tz: "America/Chicago" },
+    { id: "KMIA", name: "Miami", lat: 25.7959, lon: -80.2870, tz: "America/New_York" },
+    { id: "KHOU", name: "Houston Hobby", lat: 29.6454, lon: -95.2789, tz: "America/Chicago" },
+    { id: "KAUS", name: "Austin", lat: 30.1900, lon: -97.6687, tz: "America/Chicago" },
+    { id: "KBKF", name: "Denver Buckley", lat: 39.7017, lon: -104.7517, tz: "America/Denver" },
+    { id: "KPHX", name: "Phoenix", lat: 33.4342, lon: -112.0116, tz: "America/Phoenix" },
+    { id: "KLAS", name: "Las Vegas", lat: 36.0840, lon: -115.1536, tz: "America/Los_Angeles" },
+    { id: "KLAX", name: "Los Angeles", lat: 33.9416, lon: -118.4085, tz: "America/Los_Angeles" },
+    { id: "KSFO", name: "San Francisco", lat: 37.6196, lon: -122.3656, tz: "America/Los_Angeles" },
+    { id: "KSEA", name: "Seattle", lat: 47.4502, lon: -122.3088, tz: "America/Los_Angeles" },
+    { id: "KPHL", name: "Philadelphia", lat: 39.8729, lon: -75.2437, tz: "America/New_York" },
+    { id: "KJAX", name: "Jacksonville", lat: 30.4941, lon: -81.6879, tz: "America/New_York" },
+    { id: "KCLT", name: "Charlotte", lat: 35.2140, lon: -80.9431, tz: "America/New_York" },
+    { id: "KBNA", name: "Nashville", lat: 36.1263, lon: -86.6774, tz: "America/Chicago" },
+    { id: "KMSP", name: "Minneapolis", lat: 44.8848, lon: -93.2223, tz: "America/Chicago" },
+    { id: "KDFW", name: "Dallas/Fort Worth", lat: 32.8998, lon: -97.0403, tz: "America/Chicago" },
+    { id: "KOKC", name: "Oklahoma City", lat: 35.3931, lon: -97.6008, tz: "America/Chicago" },
+    { id: "KSAT", name: "San Antonio", lat: 29.5337, lon: -98.4698, tz: "America/Chicago" }
   ];
 
   STATIONS.sort((a, b) => b.lon - a.lon);
 
   const toF = (c) => (c * 9/5) + 32;
 
-  let activeAlerts = []; // Array to hold intra-day shift alerts for the banner
+  let activeAlerts = []; 
 
-  function getPTDateString(dateMs) {
-    return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dateMs));
+  // THE FIX: Bins the calendar day strictly by the local timezone of the specific airport
+  function getStationLocalDateString(dateMs, tz) {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dateMs));
   }
+  
+  // Renders the final UI output string in Pacific Time as requested
   function getPTMilitaryTime(dateMs) {
     return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(dateMs));
   }
@@ -135,7 +131,6 @@
     } catch (e) { console.error("Failed to save to server database", e); }
   }
 
-  // --- NOTIFICATION & BANNER LOGIC ---
   function enableNotifications() {
     if (!("Notification" in window)) {
       alert("This browser does not support desktop notifications.");
@@ -155,15 +150,12 @@
     
     const diff = parseFloat(currentTemp) - parseFloat(initialTemp);
     
-    // If the shift is 1 degree or larger
     if (Math.abs(diff) >= 1.0) {
         const sign = diff > 0 ? "+" : "";
         const bodyTxt = `<strong>${stName}</strong> (${model}) shifted ${sign}${diff.toFixed(1)}°F to <strong>${currentTemp}°F</strong> (was ${parseFloat(initialTemp).toFixed(1)}°F)`;
         
-        // 1. Add to Banner Array
         activeAlerts.push(bodyTxt);
 
-        // 2. Handle Browser Push Notification
         const alertKey = `alert_${stId}_${dateStr}_${model}_${currentTemp}`;
         if (!localStorage.getItem(alertKey)) {
             if (Notification.permission === "granted") {
@@ -199,9 +191,9 @@
 
   async function fetchStationData(st) {
     const nowMs = Date.now();
-    const todayStr = getPTDateString(nowMs);
-    const yesterdayStr = getPTDateString(nowMs - 86400000);
-    const tmrwStr = getPTDateString(nowMs + 86400000);
+    const todayStr = getStationLocalDateString(nowMs, st.tz);
+    const yesterdayStr = getStationLocalDateString(nowMs - 86400000, st.tz);
+    const tmrwStr = getStationLocalDateString(nowMs + 86400000, st.tz);
 
     const stHistory = globalHistoryDB[st.id] || {};
     const yestHistory = stHistory[yesterdayStr] || {};
@@ -210,11 +202,12 @@
     const pAWC = safeFetch(`/api/awc_metar?station=${st.id}`, false);
     const pNWS = safeFetch(`/api/nws_forecast?lat=${st.lat}&lon=${st.lon}`);
     const pWU = safeFetch(`/api/wu_forecast?lat=${st.lat}&lon=${st.lon}`);
-    const pOM = safeFetch(`https://api.open-meteo.com/v1/forecast?latitude=${st.lat}&longitude=${st.lon}&hourly=temperature_2m&past_days=1&forecast_days=2&temperature_unit=fahrenheit&timezone=America%2FLos_Angeles`);
+    // Open-Meteo updated to use unixtime absolute timestamps safely
+    const pOM = safeFetch(`https://api.open-meteo.com/v1/forecast?latitude=${st.lat}&longitude=${st.lon}&hourly=temperature_2m&past_days=1&forecast_days=2&temperature_unit=fahrenheit&timezone=auto&timeformat=unixtime`);
 
     const results = await Promise.allSettled([pAWC, pNWS, pWU, pOM]);
 
-    // 1. Process AWC
+    // 1. Process AWC (METAR & Yest Actual)
     let currentTempF = "—", obsTimeStr = "—", yestActualF = "—", yestActualTime = "—";
     if (results[0].status === "fulfilled") {
        let awcData = [];
@@ -231,7 +224,7 @@
        let yestMaxC = -999, yMaxTime = null;
        obsList.forEach(obs => {
          const ms = extractTimeMs(obs);
-         if (ms && obs.temp != null && getPTDateString(ms) === yesterdayStr) {
+         if (ms && obs.temp != null && getStationLocalDateString(ms, st.tz) === yesterdayStr) {
            if (obs.temp > yestMaxC) { yestMaxC = obs.temp; yMaxTime = ms; }
          }
        });
@@ -248,7 +241,7 @@
         const periods = results[1].value.properties?.periods || [];
         periods.forEach(p => {
             const ms = Date.parse(p.startTime);
-            const dateStr = getPTDateString(ms);
+            const dateStr = getStationLocalDateString(ms, st.tz);
             if (dateStr === todayStr && p.temperature > maxT) { maxT = p.temperature; maxTTm = ms; }
             if (dateStr === tmrwStr && p.temperature > maxTm) { maxTm = p.temperature; maxTmTm = ms; }
         });
@@ -273,7 +266,7 @@
         const timeArr = results[2].value.validTimeLocal || [];
         for(let i=0; i<tArr.length; i++) {
             const ms = Date.parse(timeArr[i]);
-            const dateStr = getPTDateString(ms);
+            const dateStr = getStationLocalDateString(ms, st.tz);
             if (dateStr === todayStr && tArr[i] > maxT) { maxT = tArr[i]; maxTTm = ms; }
             if (dateStr === tmrwStr && tArr[i] > maxTm) { maxTm = tArr[i]; maxTmTm = ms; }
         }
@@ -290,7 +283,7 @@
         }
     } else { wuToday = "Err"; wuTmrw = "Err"; }
 
-    // 4. Process OM
+    // 4. Process OM (Now using absolute unixtime timestamps for safety)
     let omYest = null, omYestTime = null, omToday = null, omTodayTime = null, omTmrw = null, omTmrwTime = null;
     if (results[3].status === "fulfilled") {
         const h = results[3].value.hourly || {};
@@ -298,8 +291,8 @@
         
         let yT = -999, yTm = null, tT = -999, tTm = null, tmT = -999, tmTm = null;
         for(let i=0; i<hours.length; i++) {
-            const ms = Date.parse(hours[i]);
-            const dateStr = getPTDateString(ms);
+            const ms = hours[i] * 1000;
+            const dateStr = getStationLocalDateString(ms, st.tz);
             if (dateStr === yesterdayStr && temps[i] > yT) { yT = temps[i]; yTm = ms; }
             if (dateStr === todayStr && temps[i] > tT) { tT = temps[i]; tTm = ms; }
             if (dateStr === tmrwStr && temps[i] > tmT) { tmT = temps[i]; tmTm = ms; }
@@ -388,7 +381,6 @@
     const timeEl = document.getElementById('refreshTimestamp');
     const banner = document.getElementById('alertBanner');
     
-    // Clear out active alerts for the new refresh cycle
     activeAlerts = [];
     
     if (!container.innerHTML) {
@@ -404,7 +396,6 @@
     const results = await Promise.all(STATIONS.map(st => fetchStationData(st)));
     container.innerHTML = results.map(renderCard).join('');
     
-    // Render the active alerts banner if any stations shifted >= 1.0 degree
     if (activeAlerts.length > 0) {
         let bannerHtml = `<span class="close-btn" onclick="document.getElementById('alertBanner').style.display='none'">✕</span>`;
         bannerHtml += `<div style="margin-bottom: 8px; font-size: 16px;">⚠️ <strong>Active Forecast Shifts (≥ 1.0°F)</strong></div>`;
@@ -420,13 +411,11 @@
     timeEl.textContent = `Last refreshed: ${getPTMilitaryTime(Date.now())} PT`;
   }
 
-  // Request notification permission immediately on load if not already granted/denied
   if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
   }
 
   refreshAll();
-  // Auto-refresh exactly every 10 minutes (600,000 ms)
   setInterval(refreshAll, 10 * 60 * 1000);
 </script>
 </body>
