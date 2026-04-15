@@ -9,22 +9,11 @@
     body { font-family: system-ui, -apple-system, sans-serif; margin: 20px; line-height: 1.4; background: #f9fafb; color: #111827; }
     @media (prefers-color-scheme: dark) { body { background: #111827; color: #f9fafb; } }
 
-    #alertBanner { 
-      display: none; background-color: #f59e0b; color: #fff; padding: 16px 20px; 
-      margin-bottom: 20px; border-radius: 8px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
-    }
-    #alertBanner .close-btn { float: right; cursor: pointer; opacity: 0.8; font-size: 18px; font-weight: bold; }
-    #alertBanner .close-btn:hover { opacity: 1; }
-    .alert-item { margin-top: 6px; font-weight: 500; }
-    @media (prefers-color-scheme: dark) { #alertBanner { background-color: #d97706; } }
-
     header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
     h1 { margin: 0; font-size: 24px; }
     .btn-group { display: flex; gap: 8px; }
     button { padding: 8px 16px; border-radius: 8px; border: 1px solid #d1d5db; background: transparent; cursor: pointer; color: inherit; font-weight: 600; }
     button:hover { background: rgba(127,127,127,0.1); }
-    #notifyBtn { border-color: #10b981; color: #10b981; }
-    #notifyBtn:hover { background: rgba(16, 185, 129, 0.1); }
 
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 16px; }
     .card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
@@ -42,7 +31,7 @@
     table.forecast-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; text-align: right; }
     table.forecast-table th { font-weight: 600; opacity: 0.7; padding-bottom: 6px; border-bottom: 1px solid rgba(127,127,127,0.2); }
     table.forecast-table th.left { text-align: left; }
-    table.forecast-table td { padding: 6px 0; border-bottom: 1px solid rgba(127,127,127,0.1); font-variant-numeric: tabular-nums; font-weight: 500; vertical-align: top; }
+    table.forecast-table td { padding: 8px 4px; border-bottom: 1px solid rgba(127,127,127,0.1); font-variant-numeric: tabular-nums; font-weight: 500; vertical-align: middle; }
     table.forecast-table td.left { text-align: left; font-weight: 600; opacity: 0.9; }
 
     .time-sub { display: block; font-size: 10px; opacity: 0.6; font-weight: 400; margin-top: 2px; }
@@ -51,45 +40,45 @@
 </head>
 <body>
 
-  <div id="alertBanner"></div>
-
   <header>
     <div>
       <h1>Multi-station Dashboard</h1>
       <div style="font-size: 13px; opacity: 0.7; margin-top: 4px;" id="refreshTimestamp">Awaiting refresh...</div>
     </div>
     <div class="btn-group">
-      <button id="notifyBtn" onclick="enableNotifications()">🔔 Enable Alerts</button>
       <button onclick="refreshAll()">Refresh Data</button>
     </div>
   </header>
+
+  <div id="alertsContainer" style="margin-bottom: 16px; display: none;"></div>
 
   <div class="grid" id="dashboard"></div>
 
 <script>
   let STATIONS = [
+    { id: "KBOS", name: "Boston", lat: 42.3656, lon: -71.0096, tz: "America/New_York" },
     { id: "KLGA", name: "LaGuardia", lat: 40.7769, lon: -73.8740, tz: "America/New_York" },
+    { id: "KPHL", name: "Philadelphia", lat: 39.8729, lon: -75.2437, tz: "America/New_York" },
     { id: "KDCA", name: "Washington Reagan", lat: 38.8512, lon: -77.0402, tz: "America/New_York" },
-    { id: "KATL", name: "Atlanta", lat: 33.6407, lon: -84.4277, tz: "America/New_York" },
-    { id: "KDTW", name: "Detroit", lat: 42.2121, lon: -83.3533, tz: "America/Detroit" },
-    { id: "KMDW", name: "Chicago Midway", lat: 41.7868, lon: -87.7522, tz: "America/Chicago" },
     { id: "KMIA", name: "Miami", lat: 25.7959, lon: -80.2870, tz: "America/New_York" },
+    { id: "KCLT", name: "Charlotte", lat: 35.2140, lon: -80.9431, tz: "America/New_York" },
+    { id: "KJAX", name: "Jacksonville", lat: 30.4941, lon: -81.6879, tz: "America/New_York" },
+    { id: "KDTW", name: "Detroit", lat: 42.2121, lon: -83.3533, tz: "America/Detroit" },
+    { id: "KATL", name: "Atlanta", lat: 33.6407, lon: -84.4277, tz: "America/New_York" },
+    { id: "KBNA", name: "Nashville", lat: 36.1263, lon: -86.6774, tz: "America/Chicago" },
+    { id: "KMDW", name: "Chicago Midway", lat: 41.7868, lon: -87.7522, tz: "America/Chicago" },
+    { id: "KMSP", name: "Minneapolis", lat: 44.8848, lon: -93.2223, tz: "America/Chicago" },
     { id: "KHOU", name: "Houston Hobby", lat: 29.6454, lon: -95.2789, tz: "America/Chicago" },
+    { id: "KDFW", name: "Dallas/Fort Worth", lat: 32.8998, lon: -97.0403, tz: "America/Chicago" },
+    { id: "KOKC", name: "Oklahoma City", lat: 35.3931, lon: -97.6008, tz: "America/Chicago" },
     { id: "KAUS", name: "Austin", lat: 30.1900, lon: -97.6687, tz: "America/Chicago" },
+    { id: "KSAT", name: "San Antonio", lat: 29.5337, lon: -98.4698, tz: "America/Chicago" },
     { id: "KBKF", name: "Denver Buckley", lat: 39.7017, lon: -104.7517, tz: "America/Denver" },
     { id: "KPHX", name: "Phoenix", lat: 33.4342, lon: -112.0116, tz: "America/Phoenix" },
     { id: "KLAS", name: "Las Vegas", lat: 36.0840, lon: -115.1536, tz: "America/Los_Angeles" },
     { id: "KLAX", name: "Los Angeles", lat: 33.9416, lon: -118.4085, tz: "America/Los_Angeles" },
-    { id: "KSFO", name: "San Francisco", lat: 37.6196, lon: -122.3656, tz: "America/Los_Angeles" },
     { id: "KSEA", name: "Seattle", lat: 47.4502, lon: -122.3088, tz: "America/Los_Angeles" },
-    { id: "KPHL", name: "Philadelphia", lat: 39.8729, lon: -75.2437, tz: "America/New_York" },
-    { id: "KJAX", name: "Jacksonville", lat: 30.4941, lon: -81.6879, tz: "America/New_York" },
-    { id: "KCLT", name: "Charlotte", lat: 35.2140, lon: -80.9431, tz: "America/New_York" },
-    { id: "KBNA", name: "Nashville", lat: 36.1263, lon: -86.6774, tz: "America/Chicago" },
-    { id: "KMSP", name: "Minneapolis", lat: 44.8848, lon: -93.2223, tz: "America/Chicago" },
-    { id: "KDFW", name: "Dallas/Fort Worth", lat: 32.8998, lon: -97.0403, tz: "America/Chicago" },
-    { id: "KOKC", name: "Oklahoma City", lat: 35.3931, lon: -97.6008, tz: "America/Chicago" },
-    { id: "KSAT", name: "San Antonio", lat: 29.5337, lon: -98.4698, tz: "America/Chicago" }
+    { id: "KSFO", name: "San Francisco", lat: 37.6196, lon: -122.3656, tz: "America/Los_Angeles" }
   ];
 
   STATIONS.sort((a, b) => b.lon - a.lon);
@@ -98,12 +87,10 @@
 
   let activeAlerts = []; 
 
-  // THE FIX: Bins the calendar day strictly by the local timezone of the specific airport
   function getStationLocalDateString(dateMs, tz) {
     return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dateMs));
   }
   
-  // Renders the final UI output string in Pacific Time as requested
   function getPTMilitaryTime(dateMs) {
     return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(dateMs));
   }
@@ -127,66 +114,112 @@
   async function saveForecastToServer(stid, dateStr, model, temp, time) {
     if (temp === "Err" || temp === "—" || temp == null) return;
     try {
-      fetch('/api/history', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stid, dateStr, model, temp, time }) });
+      await fetch('/api/history', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stid, dateStr, model, temp, time }) });
     } catch (e) { console.error("Failed to save to server database", e); }
   }
 
-  function enableNotifications() {
-    if (!("Notification" in window)) {
-      alert("This browser does not support desktop notifications.");
-    } else if (Notification.permission === "granted") {
-      alert("Push notifications are already enabled and active!");
-    } else if (Notification.permission !== "denied") {
-      Notification.requestPermission().then((permission) => {
-        if (permission === "granted") {
-            new Notification("Trading Alerts Enabled", { body: "You will be notified when forecasts shift by 1 degree or more." });
-        }
-      });
-    }
+  // --- MAGNITUDE COLORING ---
+  function getMagnitudeColor(delta) {
+      const absD = Math.abs(delta);
+      if (absD >= 3.0) return "#f59e0b"; // Orange (Huge Move)
+      if (absD >= 2.0) return "#8b5cf6"; // Purple (Big Move)
+      if (absD >= 1.0) return "#3b82f6"; // Blue (Standard Move)
+      return "inherit";
   }
 
-  function checkAndNotify(stId, stName, dateStr, model, currentTemp, initialTemp) {
-    if (!currentTemp || !initialTemp || currentTemp === "Err" || currentTemp === "—") return;
-    
-    const diff = parseFloat(currentTemp) - parseFloat(initialTemp);
-    
-    if (Math.abs(diff) >= 1.0) {
-        const sign = diff > 0 ? "+" : "";
-        const bodyTxt = `<strong>${stName}</strong> (${model}) shifted ${sign}${diff.toFixed(1)}°F to <strong>${currentTemp}°F</strong> (was ${parseFloat(initialTemp).toFixed(1)}°F)`;
-        
-        activeAlerts.push(bodyTxt);
+  // --- SPARKLINE GENERATOR ---
+  function generateSparkline(history) {
+      if (!history || history.length < 2) return `<span style="opacity:0.4; font-size:11px;">Flat</span>`;
+      
+      const minT = Math.min(...history.map(h => parseFloat(h.temp)));
+      const maxT = Math.max(...history.map(h => parseFloat(h.temp)));
+      const minTime = history[0].ts;
+      const maxTime = history[history.length - 1].ts;
+      
+      const rangeT = maxT - minT || 1; 
+      const rangeTime = maxTime - minTime || 1;
+      
+      const width = 80;
+      const height = 24;
+      const pts = history.map(h => {
+          const x = ((h.ts - minTime) / rangeTime) * width;
+          const y = height - (((parseFloat(h.temp) - minT) / rangeT) * height);
+          return `${x},${y}`;
+      }).join(" ");
+      
+      const lastX = width;
+      const lastY = height - (((parseFloat(history[history.length-1].temp) - minT) / rangeT) * height);
+      const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const lineColor = isDark ? "#9ca3af" : "#6b7280";
 
-        const alertKey = `alert_${stId}_${dateStr}_${model}_${currentTemp}`;
-        if (!localStorage.getItem(alertKey)) {
-            if (Notification.permission === "granted") {
-                new Notification(`🚨 ${stName} Forecast Alert`, { body: `${model} shifted ${sign}${diff.toFixed(1)}°F. New High: ${currentTemp}°F.` });
-            }
-            localStorage.setItem(alertKey, "true");
-        }
-    }
+      return `
+      <svg viewBox="-4 -4 88 32" style="width:80px; height:28px; overflow:visible;">
+          <polyline points="${pts}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+          <circle cx="${lastX}" cy="${lastY}" r="3" fill="#3b82f6" />
+      </svg>`;
+  }
+
+  // --- 30-MINUTE LOOKBACK EXTRACTOR ---
+  function getRecentShift(history, currentTemp) {
+      if (!history || history.length === 0) return { str: "—", changed: false };
+      
+      const cutoff = Date.now() - (35 * 60000); // Look back roughly 30-35 mins
+      let anchor = history[0];
+      
+      for (let i = history.length - 1; i >= 0; i--) {
+          if (history[i].ts <= cutoff) {
+              anchor = history[i];
+              break;
+          }
+      }
+      
+      const diff = parseFloat(currentTemp) - parseFloat(anchor.temp);
+      if (Math.abs(diff) < 0.1) return { str: `<span style="opacity:0.4;">No change</span>`, changed: false };
+      
+      const sign = diff > 0 ? "+" : "";
+      return { 
+          str: `<strong>${sign}${diff.toFixed(1)}°</strong> <br/><span class="time-sub">from ${parseFloat(anchor.temp).toFixed(1)}°</span>`, 
+          changed: true 
+      };
+  }
+
+  // Deduplicate and process alerts for a single station, storing its Longitude for geographic sorting later
+  function processStationAlerts(stId, stName, stLon, todayStr, nwsTemp, nwsCache, wuTemp, wuCache, omTemp, omCache) {
+      let stAlerts = [];
+      
+      const evaluate = (model, temp, cache) => {
+          if (!temp || temp === "Err" || temp === "—" || !cache || !cache.initialTemp) return;
+          const diff = parseFloat(temp) - parseFloat(cache.initialTemp);
+          if (Math.abs(diff) >= 1.0) {
+              stAlerts.push({
+                  city: stName, source: model, currentTemp: parseFloat(temp).toFixed(1),
+                  delta: diff, initialTemp: parseFloat(cache.initialTemp).toFixed(1),
+                  time: cache.time || "N/A", cacheObj: cache, lon: stLon
+              });
+          }
+      };
+
+      evaluate("NWS Official", nwsTemp, nwsCache);
+      evaluate("WUnderground", wuTemp, wuCache);
+      evaluate("Open-Meteo", omTemp, omCache);
+
+      if (stAlerts.length > 0) {
+          // Sort to find the highest absolute move. Tie breaker favors WUnderground.
+          stAlerts.sort((a, b) => {
+              const diffA = Math.abs(a.delta);
+              const diffB = Math.abs(b.delta);
+              if (diffA !== diffB) return diffB - diffA;
+              if (a.source === "WUnderground") return -1;
+              if (b.source === "WUnderground") return 1;
+              return 0;
+          });
+          activeAlerts.push(stAlerts[0]); 
+      }
   }
 
   function formatCell(temp, time) {
       if (temp === "Err" || temp === "—" || temp == null) return "—";
       return `${temp}°F <span class="time-sub">@ ${time} PT</span>`;
-  }
-
-  function formatTodayCell(temp, time, cacheObj) {
-      if (temp === "Err" || temp === "—" || temp == null) return "—";
-      let cellHtml = `${temp}°F <span class="time-sub">@ ${time} PT</span>`;
-      
-      if (cacheObj && cacheObj.initialTemp) {
-          const diff = parseFloat(temp) - parseFloat(cacheObj.initialTemp);
-          if (Math.abs(diff) >= 0.1) {
-              const sign = diff > 0 ? "▲ +" : "▼ ";
-              const color = diff > 0 ? "#10b981" : "#ef4444"; 
-              
-              cellHtml += `<span style="display:block; font-size:11px; margin-top:4px; color:${color}; font-weight:700;" title="Morning forecast was ${cacheObj.initialTemp}°F">
-                ${sign}${diff.toFixed(1)}° <span style="font-weight:400; opacity:0.8;">(vs ${parseFloat(cacheObj.initialTemp).toFixed(1)}°)</span>
-              </span>`;
-          }
-      }
-      return cellHtml;
   }
 
   async function fetchStationData(st) {
@@ -202,12 +235,11 @@
     const pAWC = safeFetch(`/api/awc_metar?station=${st.id}`, false);
     const pNWS = safeFetch(`/api/nws_forecast?lat=${st.lat}&lon=${st.lon}`);
     const pWU = safeFetch(`/api/wu_forecast?lat=${st.lat}&lon=${st.lon}`);
-    // Open-Meteo updated to use unixtime absolute timestamps safely
     const pOM = safeFetch(`https://api.open-meteo.com/v1/forecast?latitude=${st.lat}&longitude=${st.lon}&hourly=temperature_2m&past_days=1&forecast_days=2&temperature_unit=fahrenheit&timezone=auto&timeformat=unixtime`);
 
     const results = await Promise.allSettled([pAWC, pNWS, pWU, pOM]);
 
-    // 1. Process AWC (METAR & Yest Actual)
+    // 1. Process AWC
     let currentTempF = "—", obsTimeStr = "—", yestActualF = "—", yestActualTime = "—";
     if (results[0].status === "fulfilled") {
        let awcData = [];
@@ -283,7 +315,7 @@
         }
     } else { wuToday = "Err"; wuTmrw = "Err"; }
 
-    // 4. Process OM (Now using absolute unixtime timestamps for safety)
+    // 4. Process OM
     let omYest = null, omYestTime = null, omToday = null, omTodayTime = null, omTmrw = null, omTmrwTime = null;
     if (results[3].status === "fulfilled") {
         const h = results[3].value.hourly || {};
@@ -302,14 +334,13 @@
         if (tmT !== -999) { omTmrw = tmT.toFixed(1); omTmrwTime = getPTMilitaryTime(tmTm); }
     } else { omYest = "Err"; omToday = "Err"; omTmrw = "Err"; }
 
-    // --- CHECK FOR ALERTS ---
-    if (todayHistory["NWS"] && todayHistory["NWS"].initialTemp) checkAndNotify(st.id, st.name, todayStr, "NWS Official", nwsToday, todayHistory["NWS"].initialTemp);
-    if (todayHistory["WU"] && todayHistory["WU"].initialTemp) checkAndNotify(st.id, st.name, todayStr, "WUnderground", wuToday, todayHistory["WU"].initialTemp);
-    if (todayHistory["OM"] && todayHistory["OM"].initialTemp) checkAndNotify(st.id, st.name, todayStr, "Open-Meteo", omToday, todayHistory["OM"].initialTemp);
+    // Generate alerts array with Longitude passed in for sorting
+    processStationAlerts(st.id, st.name, st.lon, todayStr, nwsToday, todayHistory["NWS"], wuToday, todayHistory["WU"], omToday, todayHistory["OM"]);
 
-    saveForecastToServer(st.id, todayStr, "NWS", nwsToday, nwsTodayTime);
-    saveForecastToServer(st.id, todayStr, "WU", wuToday, wuTodayTime);
-    saveForecastToServer(st.id, todayStr, "OM", omToday, omTodayTime);
+    // Save Live Data
+    await saveForecastToServer(st.id, todayStr, "NWS", nwsToday, nwsTodayTime);
+    await saveForecastToServer(st.id, todayStr, "WU", wuToday, wuTodayTime);
+    await saveForecastToServer(st.id, todayStr, "OM", omToday, omTodayTime);
 
     return {
       id: st.id, name: st.name,
@@ -327,6 +358,27 @@
   }
 
   function renderCard(data) {
+    const basicFmt = (temp, time) => {
+        if (temp === "Err" || temp === "—" || temp == null) return "—";
+        return `${temp}°F <span class="time-sub">@ ${time} PT</span>`;
+    };
+
+    const fmtCardToday = (temp, time, cacheObj) => {
+        if (temp === "Err" || temp === "—" || temp == null) return "—";
+        let cellHtml = `${temp}°F <span class="time-sub">@ ${time} PT</span>`;
+        
+        if (cacheObj && cacheObj.initialTemp) {
+            const diff = parseFloat(temp) - parseFloat(cacheObj.initialTemp);
+            if (Math.abs(diff) >= 0.1) {
+                const sign = diff > 0 ? "+" : "";
+                cellHtml += `<span style="display:block; font-size:11px; margin-top:4px; opacity:0.8;" title="Morning forecast was ${cacheObj.initialTemp}°F">
+                  (${sign}${diff.toFixed(1)}°)
+                </span>`;
+            }
+        }
+        return cellHtml;
+    };
+
     return `
       <div class="card">
         <div class="st-header">
@@ -354,21 +406,21 @@
             <tbody>
                 <tr>
                     <td class="left">NWS <span class="badge">Actual</span></td>
-                    <td>${formatCell(data.yestActualF, data.yestActualTime)}</td>
-                    <td>${formatTodayCell(data.nwsToday, data.nwsTodayTime, data.nwsTodayCache)}</td>
-                    <td>${formatCell(data.nwsTmrw, data.nwsTmrwTime)}</td>
+                    <td>${basicFmt(data.yestActualF, data.yestActualTime)}</td>
+                    <td>${fmtCardToday(data.nwsToday, data.nwsTodayTime, data.nwsTodayCache)}</td>
+                    <td>${basicFmt(data.nwsTmrw, data.nwsTmrwTime)}</td>
                 </tr>
                 <tr>
                     <td class="left">WUnderground</td>
-                    <td>${formatCell(data.wuYestTemp, data.wuYestTime)}</td>
-                    <td>${formatTodayCell(data.wuToday, data.wuTodayTime, data.wuTodayCache)}</td>
-                    <td>${formatCell(data.wuTmrw, data.wuTmrwTime)}</td>
+                    <td>${basicFmt(data.wuYestTemp, data.wuYestTime)}</td>
+                    <td>${fmtCardToday(data.wuToday, data.wuTodayTime, data.wuTodayCache)}</td>
+                    <td>${basicFmt(data.wuTmrw, data.wuTmrwTime)}</td>
                 </tr>
                 <tr>
                     <td class="left">Open-Meteo</td>
-                    <td>${formatCell(data.omYest, data.omYestTime)}</td>
-                    <td>${formatTodayCell(data.omToday, data.omTodayTime, data.omTodayCache)}</td>
-                    <td>${formatCell(data.omTmrw, data.omTmrwTime)}</td>
+                    <td>${basicFmt(data.omYest, data.omYestTime)}</td>
+                    <td>${fmtCardToday(data.omToday, data.omTodayTime, data.omTodayCache)}</td>
+                    <td>${basicFmt(data.omTmrw, data.omTmrwTime)}</td>
                 </tr>
             </tbody>
         </table>
@@ -379,7 +431,7 @@
   async function refreshAll() {
     const container = document.getElementById('dashboard');
     const timeEl = document.getElementById('refreshTimestamp');
-    const banner = document.getElementById('alertBanner');
+    const alertsContainer = document.getElementById('alertsContainer');
     
     activeAlerts = [];
     
@@ -396,23 +448,64 @@
     const results = await Promise.all(STATIONS.map(st => fetchStationData(st)));
     container.innerHTML = results.map(renderCard).join('');
     
+    // --- RENDER REFINED ALERTS TABLE ---
     if (activeAlerts.length > 0) {
-        let bannerHtml = `<span class="close-btn" onclick="document.getElementById('alertBanner').style.display='none'">✕</span>`;
-        bannerHtml += `<div style="margin-bottom: 8px; font-size: 16px;">⚠️ <strong>Active Forecast Shifts (≥ 1.0°F)</strong></div>`;
-        activeAlerts.forEach(alertText => {
-            bannerHtml += `<div class="alert-item">• ${alertText}</div>`;
-        });
-        banner.innerHTML = bannerHtml;
-        banner.style.display = 'block';
+        // EXACT FIX: Sort East to West based on the longitude mapped during data fetching
+        activeAlerts.sort((a, b) => b.lon - a.lon);
+
+        let tableRows = activeAlerts.map(a => {
+            const sign = a.delta > 0 ? "+" : "";
+            const color = getMagnitudeColor(a.delta);
+            const recentShift = getRecentShift(a.cacheObj.history, a.currentTemp);
+            const sparkline = generateSparkline(a.cacheObj.history);
+
+            return `
+            <tr>
+                <td class="left"><strong>${a.city}</strong></td>
+                <td class="left" style="opacity: 0.85;">${a.source}</td>
+                <td>
+                    <span style="font-weight: 700; color: ${color};">
+                        ${a.currentTemp}°F (${sign}${a.delta.toFixed(1)}°)
+                    </span>
+                </td>
+                <td style="text-align: center;">${recentShift.str}</td>
+                <td style="padding-top: 10px;">${sparkline}</td>
+                <td>${a.initialTemp}°F <span class="time-sub">@ Morning</span></td>
+            </tr>`;
+        }).join('');
+
+        alertsContainer.innerHTML = `
+            <div class="card" style="border-color: #374151; background: rgba(0,0,0,0.02);">
+                <div class="st-header" style="cursor: pointer; border-bottom: none; margin-bottom: 0; padding-bottom: 0;" onclick="const t = document.getElementById('alertsTableWrapper'); t.style.display = t.style.display === 'none' ? 'block' : 'none';">
+                    <div class="st-name" style="font-size: 18px;">⚠️ Active Forecast Shifts (≥ 1.0°F)</div>
+                    <div style="font-size: 13px; opacity: 0.8; font-weight: 600; text-decoration: underline;">Toggle View</div>
+                </div>
+                <div id="alertsTableWrapper" style="display: block; margin-top: 12px; border-top: 1px solid rgba(127,127,127,0.2); padding-top: 8px;">
+                    <table class="forecast-table">
+                        <thead>
+                            <tr>
+                                <th class="left">City</th>
+                                <th class="left">Source</th>
+                                <th>New Temp (Total Delta)</th>
+                                <th style="text-align: center;">Last 30m Shift</th>
+                                <th>Intraday Trend</th>
+                                <th>Morning Baseline</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        alertsContainer.style.display = 'block';
     } else {
-        banner.style.display = 'none';
+        alertsContainer.style.display = 'none';
+        alertsContainer.innerHTML = '';
     }
 
     timeEl.textContent = `Last refreshed: ${getPTMilitaryTime(Date.now())} PT`;
-  }
-
-  if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
   }
 
   refreshAll();

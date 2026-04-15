@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 5179;
 app.use(express.json());
 app.use(express.static(process.cwd(), { extensions: ["html"] }));
 
-// --- FORECAST HISTORY DATABASE (With Intra-Day Delta Tracking) ---
+// --- FORECAST HISTORY DATABASE (With Timeseries Array for Sparklines) ---
 const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || process.cwd();
 const CACHE_FILE = path.join(DATA_DIR, "forecast_history.json");
 
@@ -44,11 +44,20 @@ app.post("/api/history", (req, res) => {
   let existing = memoryDB[stid][dateStr][model];
 
   if (!existing) {
-    memoryDB[stid][dateStr][model] = { temp, time, initialTemp: temp };
+    // First time seeing it today: set initial and start the history array
+    memoryDB[stid][dateStr][model] = { 
+        temp, time, initialTemp: temp, 
+        history: [{ ts: Date.now(), temp, time }] 
+    };
   } else {
     existing.temp = temp;
     existing.time = time;
     if (!existing.initialTemp) existing.initialTemp = temp; 
+    if (!existing.history) existing.history = [{ ts: Date.now() - 600000, temp: existing.initialTemp, time }];
+    
+    // Push current reading to history array (cap at 144 to prevent memory leaks, ~24hrs at 10m intervals)
+    existing.history.push({ ts: Date.now(), temp, time });
+    if (existing.history.length > 144) existing.history.shift();
   }
 
   if (writeTimeout) clearTimeout(writeTimeout);
