@@ -31,7 +31,8 @@
     table.forecast-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; text-align: right; }
     table.forecast-table th { font-weight: 600; opacity: 0.7; padding-bottom: 6px; border-bottom: 1px solid rgba(127,127,127,0.2); }
     table.forecast-table th.left { text-align: left; }
-    table.forecast-table td { padding: 8px 4px; border-bottom: 1px solid rgba(127,127,127,0.1); font-variant-numeric: tabular-nums; font-weight: 500; vertical-align: middle; }
+    /* FIXED: Changed vertical-align to top */
+    table.forecast-table td { padding: 8px 4px; border-bottom: 1px solid rgba(127,127,127,0.1); font-variant-numeric: tabular-nums; font-weight: 500; vertical-align: top; }
     table.forecast-table td.left { text-align: left; font-weight: 600; opacity: 0.9; }
 
     .time-sub { display: block; font-size: 10px; opacity: 0.6; font-weight: 400; margin-top: 2px; }
@@ -118,13 +119,13 @@
     } catch (e) { console.error("Failed to save to server database", e); }
   }
 
-  // --- MAGNITUDE COLORING ---
+  // --- MAGNITUDE COLORING (NO RED/GREEN) ---
   function getMagnitudeColor(delta) {
       const absD = Math.abs(delta);
-      if (absD >= 3.0) return "#f59e0b"; // Orange 
-      if (absD >= 2.0) return "#8b5cf6"; // Purple
-      if (absD >= 1.0) return "#3b82f6"; // Blue 
-      return "inherit";
+      if (absD >= 3.0) return "#f59e0b"; // Orange (Huge Move)
+      if (absD >= 2.0) return "#8b5cf6"; // Purple (Big Move)
+      if (absD >= 1.0) return "#3b82f6"; // Blue (Standard Move)
+      return "inherit"; 
   }
 
   // --- SPARKLINE GENERATOR ---
@@ -163,11 +164,11 @@
   function getRecentShift(history, currentTemp) {
       if (!history || history.length === 0) return { str: "—", changed: false };
       
-      const cutoff = Date.now() - (35 * 60000); 
+      const thirtyMinsAgo = Date.now() - (30 * 60000); 
       let anchor = history[0];
       
       for (let i = history.length - 1; i >= 0; i--) {
-          if (history[i].ts <= cutoff) {
+          if (history[i].ts <= thirtyMinsAgo) {
               anchor = history[i];
               break;
           }
@@ -177,8 +178,9 @@
       if (Math.abs(diff) < 0.1) return { str: `<span style="opacity:0.4;">No change</span>`, changed: false };
       
       const sign = diff > 0 ? "+" : "";
+      const color = getMagnitudeColor(diff); 
       return { 
-          str: `<strong>${sign}${diff.toFixed(1)}°</strong> <br/><span class="time-sub">from ${parseFloat(anchor.temp).toFixed(1)}°</span>`, 
+          str: `<strong style="color:${color}">${sign}${diff.toFixed(1)}°</strong> <br/><span class="time-sub">from ${parseFloat(anchor.temp).toFixed(1)}°</span>`, 
           changed: true 
       };
   }
@@ -229,8 +231,6 @@
     const pNWS = safeFetch(`/api/nws_forecast?lat=${st.lat}&lon=${st.lon}`);
     const pWU = safeFetch(`/api/wu_forecast?lat=${st.lat}&lon=${st.lon}`);
     const pOM = safeFetch(`https://api.open-meteo.com/v1/forecast?latitude=${st.lat}&longitude=${st.lon}&hourly=temperature_2m&past_days=1&forecast_days=2&temperature_unit=fahrenheit&timezone=auto&timeformat=unixtime`);
-    
-    // Fetch WU Current Observation
     const pWUCurr = safeFetch(`/api/wu_current?lat=${st.lat}&lon=${st.lon}`);
 
     const results = await Promise.allSettled([pAWC, pNWS, pWU, pOM, pWUCurr]);
@@ -368,7 +368,8 @@
             const diff = parseFloat(temp) - parseFloat(cacheObj.initialTemp);
             if (Math.abs(diff) >= 0.1) {
                 const sign = diff > 0 ? "+" : "";
-                cellHtml += `<span style="display:block; font-size:11px; margin-top:4px; opacity:0.8;" title="Morning forecast was ${cacheObj.initialTemp}°F">
+                const color = getMagnitudeColor(diff);
+                cellHtml += `<span style="display:block; font-size:11px; margin-top:4px; font-weight:700; color:${color};" title="Morning forecast was ${cacheObj.initialTemp}°F">
                   (${sign}${diff.toFixed(1)}°)
                 </span>`;
             }
@@ -461,14 +462,15 @@
             return `
             <tr>
                 <td class="left"><strong>${a.city}</strong></td>
-                <td class="left" style="opacity: 0.85;">${a.source}</td>
                 <td>
-                    <span style="font-weight: 700; color: ${color};">
-                        ${a.currentTemp}°F (${sign}${a.delta.toFixed(1)}°)
-                    </span>
+                    <span style="font-weight: 700;">${a.currentTemp}°F</span><br/>
+                    <span style="font-size: 10px; opacity: 0.7;">${a.source}</span>
+                </td>
+                <td>
+                    <span style="font-weight: 700; color: ${color};">${sign}${a.delta.toFixed(1)}°</span>
                 </td>
                 <td style="text-align: center;">${recentShift.str}</td>
-                <td style="padding-top: 10px;">${sparkline}</td>
+                <td>${sparkline}</td>
                 <td>${a.initialTemp}°F <span class="time-sub">@ Morning</span></td>
             </tr>`;
         }).join('');
@@ -484,8 +486,8 @@
                         <thead>
                             <tr>
                                 <th class="left">City</th>
-                                <th class="left">Source</th>
-                                <th>New Temp (Total Delta)</th>
+                                <th>New Temp</th>
+                                <th>Total Delta</th>
                                 <th style="text-align: center;">Last 30m Shift</th>
                                 <th>Intraday Trend</th>
                                 <th>Morning Baseline</th>
