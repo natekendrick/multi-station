@@ -31,7 +31,6 @@
     table.forecast-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; text-align: right; }
     table.forecast-table th { font-weight: 600; opacity: 0.7; padding-bottom: 6px; border-bottom: 1px solid rgba(127,127,127,0.2); }
     table.forecast-table th.left { text-align: left; }
-    /* FIXED: Changed vertical-align to top */
     table.forecast-table td { padding: 8px 4px; border-bottom: 1px solid rgba(127,127,127,0.1); font-variant-numeric: tabular-nums; font-weight: 500; vertical-align: top; }
     table.forecast-table td.left { text-align: left; font-weight: 600; opacity: 0.9; }
 
@@ -119,7 +118,6 @@
     } catch (e) { console.error("Failed to save to server database", e); }
   }
 
-  // --- MAGNITUDE COLORING (NO RED/GREEN) ---
   function getMagnitudeColor(delta) {
       const absD = Math.abs(delta);
       if (absD >= 3.0) return "#f59e0b"; // Orange (Huge Move)
@@ -128,7 +126,6 @@
       return "inherit"; 
   }
 
-  // --- SPARKLINE GENERATOR ---
   function generateSparkline(history) {
       if (!history || history.length < 2) return `<span style="opacity:0.4; font-size:11px;">Flat</span>`;
       
@@ -160,7 +157,6 @@
       </svg>`;
   }
 
-  // --- 30-MINUTE LOOKBACK EXTRACTOR ---
   function getRecentShift(history, currentTemp) {
       if (!history || history.length === 0) return { str: "—", changed: false };
       
@@ -235,8 +231,10 @@
 
     const results = await Promise.allSettled([pAWC, pNWS, pWU, pOM, pWUCurr]);
 
-    // 1. Process AWC
+    // 1. Process AWC & Calculate "Actual High So Far Today"
     let currentTempF = "—", obsTimeStr = "—", yestActualF = "—", yestActualTime = "—";
+    let actualTodayC = -999, actualTodayTime = null;
+
     if (results[0].status === "fulfilled") {
        let awcData = [];
        try { awcData = JSON.parse(results[0].value); } catch(e){}
@@ -252,14 +250,26 @@
        let yestMaxC = -999, yMaxTime = null;
        obsList.forEach(obs => {
          const ms = extractTimeMs(obs);
-         if (ms && obs.temp != null && getStationLocalDateString(ms, st.tz) === yesterdayStr) {
-           if (obs.temp > yestMaxC) { yestMaxC = obs.temp; yMaxTime = ms; }
+         if (ms && obs.temp != null) {
+             const obsDateStr = getStationLocalDateString(ms, st.tz);
+             if (obsDateStr === yesterdayStr) {
+               if (obs.temp > yestMaxC) { yestMaxC = obs.temp; yMaxTime = ms; }
+             } else if (obsDateStr === todayStr) {
+               if (obs.temp > actualTodayC) { actualTodayC = obs.temp; actualTodayTime = ms; }
+             }
          }
        });
        if (yestMaxC !== -999) {
            yestActualF = toF(yestMaxC).toFixed(1);
            yestActualTime = getPTMilitaryTime(yMaxTime);
        }
+    }
+
+    let actualTodayF = -999;
+    let actualTodayTimeMsStr = null;
+    if (actualTodayC !== -999) {
+        actualTodayF = parseFloat(toF(actualTodayC).toFixed(1));
+        actualTodayTimeMsStr = getPTMilitaryTime(actualTodayTime);
     }
 
     // 2. Process NWS
@@ -273,17 +283,15 @@
             if (dateStr === todayStr && p.temperature > maxT) { maxT = p.temperature; maxTTm = ms; }
             if (dateStr === tmrwStr && p.temperature > maxTm) { maxTm = p.temperature; maxTmTm = ms; }
         });
-        if (maxT !== -999) { nwsToday = maxT.toFixed(1); nwsTodayTime = getPTMilitaryTime(maxTTm); }
-        if (maxTm !== -999) { nwsTmrw = maxTm.toFixed(1); nwsTmrwTime = getPTMilitaryTime(maxTmTm); }
-
-        const nwsTodayCache = todayHistory["NWS"];
-        if (nwsTodayCache && nwsTodayCache.temp !== "—" && nwsTodayCache.time && periods.length > 0) {
-            let firstPtTime = getPTMilitaryTime(Date.parse(periods[0].startTime));
-            if (firstPtTime > nwsTodayCache.time && parseFloat(nwsTodayCache.temp) > maxT) {
-                nwsToday = parseFloat(nwsTodayCache.temp).toFixed(1);
-                nwsTodayTime = nwsTodayCache.time;
-            }
+        
+        // ACTUALS FLOOR PROTECTION: Cannot forecast lower than what was already hit
+        if (actualTodayF !== -999 && actualTodayF > maxT) {
+            maxT = actualTodayF;
+            maxTTm = actualTodayTime; // Preserves the raw ms of the actual hit
         }
+
+        if (maxT !== -999) { nwsToday = maxT.toFixed(1); nwsTodayTime = typeof maxTTm === 'number' ? getPTMilitaryTime(maxTTm) : maxTTm; }
+        if (maxTm !== -999) { nwsTmrw = maxTm.toFixed(1); nwsTmrwTime = getPTMilitaryTime(maxTmTm); }
     } else { nwsToday = "Err"; nwsTmrw = "Err"; }
 
     // 3. Process WU Forecast
@@ -298,17 +306,15 @@
             if (dateStr === todayStr && tArr[i] > maxT) { maxT = tArr[i]; maxTTm = ms; }
             if (dateStr === tmrwStr && tArr[i] > maxTm) { maxTm = tArr[i]; maxTmTm = ms; }
         }
-        if (maxT !== -999) { wuToday = maxT.toFixed(1); wuTodayTime = getPTMilitaryTime(maxTTm); }
-        if (maxTm !== -999) { wuTmrw = maxTm.toFixed(1); wuTmrwTime = getPTMilitaryTime(maxTmTm); }
 
-        const wuTodayCache = todayHistory["WU"];
-        if (wuTodayCache && wuTodayCache.temp !== "—" && wuTodayCache.time && timeArr.length > 0) {
-            let firstPtTime = getPTMilitaryTime(Date.parse(timeArr[0]));
-            if (firstPtTime > wuTodayCache.time && parseFloat(wuTodayCache.temp) > maxT) {
-                wuToday = parseFloat(wuTodayCache.temp).toFixed(1);
-                wuTodayTime = wuTodayCache.time;
-            }
+        // ACTUALS FLOOR PROTECTION: Cannot forecast lower than what was already hit
+        if (actualTodayF !== -999 && actualTodayF > maxT) {
+            maxT = actualTodayF;
+            maxTTm = actualTodayTime;
         }
+
+        if (maxT !== -999) { wuToday = maxT.toFixed(1); wuTodayTime = typeof maxTTm === 'number' ? getPTMilitaryTime(maxTTm) : getPTMilitaryTime(maxTTm); }
+        if (maxTm !== -999) { wuTmrw = maxTm.toFixed(1); wuTmrwTime = getPTMilitaryTime(maxTmTm); }
     } else { wuToday = "Err"; wuTmrw = "Err"; }
 
     // 4. Process OM
@@ -325,8 +331,15 @@
             if (dateStr === todayStr && temps[i] > tT) { tT = temps[i]; tTm = ms; }
             if (dateStr === tmrwStr && temps[i] > tmT) { tmT = temps[i]; tmTm = ms; }
         }
+
+        // ACTUALS FLOOR PROTECTION: Cannot forecast lower than what was already hit
+        if (actualTodayF !== -999 && actualTodayF > tT) {
+            tT = actualTodayF;
+            tTm = actualTodayTime;
+        }
+
         if (yT !== -999) { omYest = yT.toFixed(1); omYestTime = getPTMilitaryTime(yTm); }
-        if (tT !== -999) { omToday = tT.toFixed(1); omTodayTime = getPTMilitaryTime(tTm); }
+        if (tT !== -999) { omToday = tT.toFixed(1); omTodayTime = typeof tTm === 'number' ? getPTMilitaryTime(tTm) : getPTMilitaryTime(tTm); }
         if (tmT !== -999) { omTmrw = tmT.toFixed(1); omTmrwTime = getPTMilitaryTime(tmTm); }
     } else { omYest = "Err"; omToday = "Err"; omTmrw = "Err"; }
 
