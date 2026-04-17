@@ -136,12 +136,10 @@
     return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(dateMs));
   }
 
-  // --- FIX: BULLETPROOF MIDNIGHT PT PARSER ---
   function getMidnightPT(ms) {
       const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date(ms));
       const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', timeZoneName: 'shortOffset' }).formatToParts(new Date(ms));
       
-      // Force strict ISO 8601 formatting for browser compatibility (e.g. "-07:00" instead of "-7")
       let offsetRaw = parts.find(p => p.type === 'timeZoneName').value.replace('GMT', '');
       if (!offsetRaw) offsetRaw = '-08:00'; 
       
@@ -178,15 +176,33 @@
     } catch (e) { console.error("Failed to save to server database", e); }
   }
 
+  function getMagnitudeColor(delta) {
+      const absD = Math.abs(delta);
+      if (absD >= 3.0) return "#f59e0b"; 
+      if (absD >= 2.0) return "#8b5cf6"; 
+      if (absD >= 1.0) return "#3b82f6"; 
+      return "inherit"; 
+  }
+
   async function fetchStationData(st) {
     const nowMs = Date.now();
     const todayStr = getStationLocalDateString(nowMs, st.tz);
     const yesterdayStr = getStationLocalDateString(nowMs - 86400000, st.tz);
+    const dayBeforeStr = getStationLocalDateString(nowMs - 86400000 * 2, st.tz);
     const tmrwStr = getStationLocalDateString(nowMs + 86400000, st.tz);
 
     const stHistory = globalHistoryDB[st.id] || {};
-    const yestHistory = stHistory[yesterdayStr] || {};
     const todayHistory = stHistory[todayStr] || {};
+    const yestHistory = stHistory[yesterdayStr] || {};
+    const dayBeforeHistory = stHistory[dayBeforeStr] || {};
+
+    const getCombinedHistory = (model) => {
+        return [
+            ...(dayBeforeHistory[model]?.history || []),
+            ...(yestHistory[model]?.history || []),
+            ...(todayHistory[model]?.history || [])
+        ];
+    };
 
     const pAWC = safeFetch(`/api/awc_metar?station=${st.id}`, false);
     const pNWS = safeFetch(`/api/nws_forecast?lat=${st.lat}&lon=${st.lon}`);
@@ -196,7 +212,7 @@
 
     const results = await Promise.allSettled([pAWC, pNWS, pWU, pOM, pWUCurr]);
 
-    // 1. Process AWC (METAR)
+    // 1. Process AWC
     let currentTempF = "—", obsTimeStr = "—", yestActualF = "—", yestActualTime = "—";
     let actualTodayC = -999, actualTodayTime = null;
 
@@ -293,7 +309,11 @@
         wuCurrentTempF = results[4].value.temperature.toFixed(1);
     }
 
-    // Save Live Data
+    const nwsCombined = getCombinedHistory("NWS");
+    const wuCombined = getCombinedHistory("WU");
+    const omCombined = getCombinedHistory("OM");
+    const obsCombined = getCombinedHistory("OBS");
+
     await saveForecastToServer(st.id, todayStr, "NWS", nwsToday, nwsTodayTime);
     await saveForecastToServer(st.id, todayStr, "WU", wuToday, wuTodayTime);
     await saveForecastToServer(st.id, todayStr, "OM", omToday, omTodayTime);
@@ -307,15 +327,16 @@
       wuToday, wuTodayTime, wuTmrw, wuTmrwTime, 
       omToday, omTodayTime, omTmrw, omTmrwTime, omYest, omYestTime,
       
-      nwsYestCache: yestHistory["NWS"] || {},
-      wuYestCache: yestHistory["WU"] || {},
-      omYestCache: yestHistory["OM"] || {},
-      obsYestCache: yestHistory["OBS"] || {},
-
+      wuYestTemp: yestHistory["WU"] ? yestHistory["WU"].temp : "—", wuYestTime: yestHistory["WU"] ? yestHistory["WU"].time : "",
+      
       nwsTodayCache: todayHistory["NWS"] || {}, 
       wuTodayCache: todayHistory["WU"] || {}, 
       omTodayCache: todayHistory["OM"] || {},
-      obsTodayCache: todayHistory["OBS"] || {}
+
+      nwsCombinedHistory: nwsCombined,
+      wuCombinedHistory: wuCombined,
+      omCombinedHistory: omCombined,
+      obsCombinedHistory: obsCombined
     };
   }
 
@@ -334,7 +355,8 @@
               const diff = parseFloat(temp) - parseFloat(cacheObj.initialTemp);
               if (Math.abs(diff) >= 0.1) {
                   const sign = diff > 0 ? "+" : "";
-                  cellHtml += `<span style="display:block; font-size:11px; margin-top:4px; opacity:0.8;" title="Morning forecast was ${cacheObj.initialTemp}°F">(${sign}${diff.toFixed(1)}°)</span>`;
+                  const color = getMagnitudeColor(diff);
+                  cellHtml += `<span style="display:block; font-size:11px; margin-top:4px; font-weight:700; color:${color};" title="Morning forecast was ${cacheObj.initialTemp}°F">(${sign}${diff.toFixed(1)}°)</span>`;
               }
           }
           return cellHtml;
@@ -423,7 +445,6 @@
       results.forEach(d => renderSingleChart(d.id));
   }
 
-  // --- CHART.JS RENDERING ENGINE ---
   window.switchChart = function(stId, view) {
       window.chartViews[stId] = view;
       document.querySelectorAll(`#toggle-${stId} button`).forEach(btn => btn.classList.remove('active'));
@@ -453,10 +474,10 @@
               .map(h => ({ x: h.ts, y: parseFloat(h.temp) }));
       };
 
-      const datasetNWS = parseHistory(view === 'today' ? data.nwsTodayCache.history : data.nwsYestCache.history);
-      const datasetWU = parseHistory(view === 'today' ? data.wuTodayCache.history : data.wuYestCache.history);
-      const datasetOM = parseHistory(view === 'today' ? data.omTodayCache.history : data.omYestCache.history);
-      const datasetOBS = parseHistory(view === 'today' ? data.obsTodayCache.history : data.obsYestCache.history);
+      const datasetNWS = parseHistory(data.nwsCombinedHistory);
+      const datasetWU = parseHistory(data.wuCombinedHistory);
+      const datasetOM = parseHistory(data.omCombinedHistory);
+      const datasetOBS = parseHistory(data.obsCombinedHistory);
 
       const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
       const gridColor = isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)";
@@ -506,9 +527,9 @@
       });
   }
 
-  // --- MASTER INIT ---
   async function refreshAll() {
     const timeEl = document.getElementById('refreshTimestamp');
+    
     if (!window.dashboardData.length) {
         document.getElementById('dashboard').innerHTML = '<div style="opacity: 0.6; font-weight: 600;">Fetching multi-source consensus and charting data...</div>';
     }
@@ -524,6 +545,7 @@
     window.dashboardData.sort((a, b) => STATIONS.findIndex(s => s.id === a.id) - STATIONS.findIndex(s => s.id === b.id));
     
     renderDashboard(window.dashboardData);
+
     timeEl.textContent = `Last refreshed: ${getPTMilitaryTime(Date.now())} PT`;
   }
 
