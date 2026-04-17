@@ -2,6 +2,9 @@ import express from "express";
 import fs from "fs/promises";
 import path from "path";
 
+// --- PASTE YOUR DISCORD WEBHOOK URL HERE ---
+const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1494797659322454088/GLjyOlJHN6m8FxA0Cx2581iurzKsoatLtydwYfIHSWJQmGLagN0fTZlNv5bOutJiFcWU";
+
 const app = express();
 const PORT = process.env.PORT || 5179;
 
@@ -36,7 +39,7 @@ const STATIONS = [
 
 const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || process.cwd();
 const CACHE_FILE = path.join(DATA_DIR, "forecast_history.json");
-const ORDER_FILE = path.join(DATA_DIR, "station_order.json"); // NEW: Global Order Cache
+const ORDER_FILE = path.join(DATA_DIR, "station_order.json"); 
 
 let memoryDB = {};
 let customOrder = [];
@@ -68,6 +71,20 @@ async function safeFetch(url, isJson = true, headers = {}) {
   } catch (e) {
     return null;
   }
+}
+
+// --- DISCORD ALERT ENGINE ---
+async function sendDiscordAlert(content) {
+    if (!DISCORD_WEBHOOK_URL || DISCORD_WEBHOOK_URL === "PASTE_YOUR_WEBHOOK_URL_HERE") return;
+    try {
+        await fetch(DISCORD_WEBHOOK_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content })
+        });
+    } catch(e) {
+        console.error("Discord webhook failed", e);
+    }
 }
 
 const nwsGridCache = {};
@@ -117,7 +134,7 @@ async function initDB() {
     const orderData = await fs.readFile(ORDER_FILE, "utf-8");
     customOrder = JSON.parse(orderData);
   } catch (e) {
-    customOrder = []; // Starts default East to West on fresh install
+    customOrder = []; 
   }
 }
 
@@ -143,7 +160,6 @@ async function fetchStationData(st) {
         return combined;
     };
 
-    // Execute API Calls
     const pAWC = safeFetch(`https://aviationweather.gov/api/data/metar?ids=${st.id}&format=json&hours=48`, false);
     const nwsUrl = await getNwsHourlyUrl(st.lat, st.lon);
     const pNWS = nwsUrl ? safeFetch(nwsUrl, true, { "User-Agent": "DashboardApp/1.0" }) : Promise.resolve(null);
@@ -221,6 +237,18 @@ async function fetchStationData(st) {
         if (actualTodayF !== -999 && actualTodayF > maxT) { maxT = actualTodayF; maxTTm = actualTodayTime; }
         if (maxT !== -999) { wuToday = maxT.toFixed(1); wuTodayTime = typeof maxTTm === 'number' ? getPTMilitaryTime(maxTTm) : getPTMilitaryTime(maxTTm); }
         if (maxTm !== -999) { wuTmrw = maxTm.toFixed(1); wuTmrwTime = getPTMilitaryTime(maxTmTm); }
+        
+        // --- CHECK FOR DISCORD ALERT (WU SHIFTS) ---
+        const lastWuTemp = (todayHistory["WU"] && todayHistory["WU"].temp !== "—") ? todayHistory["WU"].temp : null;
+        if (wuToday && wuToday !== "Err" && lastWuTemp && wuToday !== lastWuTemp) {
+            const diff = parseFloat(wuToday) - parseFloat(lastWuTemp);
+            // If you want to reduce spam, change 0.1 to 1.0 below.
+            if (Math.abs(diff) >= 0.1) {
+                const sign = diff > 0 ? "+" : "";
+                const alertMsg = `🚨 **${st.name}** | WUnderground Shift: **${sign}${diff.toFixed(1)}°F**\nNew HoD: **${wuToday}°F** (was ${lastWuTemp}°F)`;
+                sendDiscordAlert(alertMsg);
+            }
+        }
     } else { wuToday = "Err"; wuTmrw = "Err"; }
 
     // 4. Process OM
@@ -301,7 +329,7 @@ async function updateAllStations() {
     } catch(e) { console.error("Disk write failed", e); }
     
     isFetching = false;
-    console.log(`[${new Date().toISOString()}] Cycle Complete. UI Updated.`);
+    console.log(`[${new Date().toISOString()}] Cycle Complete.`);
 }
 
 // Start Background Engine
@@ -315,12 +343,10 @@ app.get("/api/dashboard", (req, res) => {
     res.json(currentDashboardState);
 });
 
-// GET global order
 app.get("/api/order", (req, res) => {
     res.json(customOrder);
 });
 
-// POST new global order
 app.post("/api/order", async (req, res) => {
     if (req.body && req.body.order) {
         customOrder = req.body.order;
