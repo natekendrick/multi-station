@@ -2,8 +2,8 @@ import express from "express";
 import fs from "fs/promises";
 import path from "path";
 
-// --- PASTE YOUR DISCORD WEBHOOK URL HERE ---
-const DISCORD_WEBHOOK_URL = "PASTE_YOUR_WEBHOOK_URL_HERE";
+// SECURE: Pulls from your environment/hosting variables instead of hardcoding
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
 const app = express();
 const PORT = process.env.PORT || 5179;
