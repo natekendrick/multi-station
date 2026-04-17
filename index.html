@@ -28,7 +28,6 @@
     
     .chart-container { position: relative; width: 100%; min-height: 250px; }
 
-    /* New Toggle Styles for the Chart View */
     .toggle-group { display: flex; gap: 4px; background: rgba(127,127,127,0.1); padding: 3px; border-radius: 6px; }
     .toggle-group button { padding: 4px 10px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; color: inherit; font-weight: 500;}
     .toggle-group button.active { background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.1); font-weight: 700; color: #2563eb;}
@@ -98,10 +97,9 @@
   ];
 
   window.dashboardData = [];
-  window.chartViews = {}; // Tracks whether 'today' or 'yesterday' is selected for each chart
+  window.chartViews = {}; 
   let chartInstances = {};
 
-  // Custom UI Order Logic
   function applyCustomSort() {
       const savedOrder = JSON.parse(localStorage.getItem('customStationOrder')) || [];
       if (savedOrder.length === STATIONS.length) {
@@ -128,7 +126,6 @@
       }
   }
 
-  // Helper Functions
   const toF = (c) => (c * 9/5) + 32;
 
   function getStationLocalDateString(dateMs, tz) {
@@ -139,12 +136,23 @@
     return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(dateMs));
   }
 
-  // Returns the precise Unix timestamp for Midnight PT of whatever day 'ms' falls on
+  // --- FIX: BULLETPROOF MIDNIGHT PT PARSER ---
   function getMidnightPT(ms) {
       const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date(ms));
       const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', timeZoneName: 'shortOffset' }).formatToParts(new Date(ms));
-      const offset = parts.find(p => p.type === 'timeZoneName').value.replace('GMT', '') || '-08:00';
-      return Date.parse(`${dateStr}T00:00:00${offset}`);
+      
+      // Force strict ISO 8601 formatting for browser compatibility (e.g. "-07:00" instead of "-7")
+      let offsetRaw = parts.find(p => p.type === 'timeZoneName').value.replace('GMT', '');
+      if (!offsetRaw) offsetRaw = '-08:00'; 
+      
+      let sign = offsetRaw.startsWith('-') ? '-' : '+';
+      let rawNums = offsetRaw.replace(/[+-]/g, '');
+      let [hh, mm] = rawNums.split(':');
+      if (!mm) mm = '00';
+      if (hh.length === 1) hh = '0' + hh;
+      let isoOffset = `${sign}${hh}:${mm}`;
+      
+      return Date.parse(`${dateStr}T00:00:00${isoOffset}`);
   }
 
   function extractTimeMs(obs) {
@@ -299,13 +307,11 @@
       wuToday, wuTodayTime, wuTmrw, wuTmrwTime, 
       omToday, omTodayTime, omTmrw, omTmrwTime, omYest, omYestTime,
       
-      // Return yesterday's full DB cache for the toggles
       nwsYestCache: yestHistory["NWS"] || {},
       wuYestCache: yestHistory["WU"] || {},
       omYestCache: yestHistory["OM"] || {},
       obsYestCache: yestHistory["OBS"] || {},
 
-      // Today's Caches
       nwsTodayCache: todayHistory["NWS"] || {}, 
       wuTodayCache: todayHistory["WU"] || {}, 
       omTodayCache: todayHistory["OM"] || {},
@@ -417,7 +423,7 @@
       results.forEach(d => renderSingleChart(d.id));
   }
 
-  // --- CHART RENDERING SYSTEM ---
+  // --- CHART.JS RENDERING ENGINE ---
   window.switchChart = function(stId, view) {
       window.chartViews[stId] = view;
       document.querySelectorAll(`#toggle-${stId} button`).forEach(btn => btn.classList.remove('active'));
@@ -432,14 +438,11 @@
       const ctx = document.getElementById(`chart-${data.id}`);
       if (!ctx) return;
 
-      if (chartInstances[data.id]) {
-          chartInstances[data.id].destroy();
-      }
+      if (chartInstances[data.id]) chartInstances[data.id].destroy();
 
       const view = window.chartViews[data.id] || 'today';
       const targetMs = view === 'today' ? Date.now() : Date.now() - 86400000;
       
-      // Lock the graph to a perfect 24-hour Midnight to Midnight view based on Pacific Time
       const minMs = getMidnightPT(targetMs);
       const maxMs = minMs + 86400000;
 
@@ -463,10 +466,10 @@
           type: 'line',
           data: {
               datasets: [
-                  { label: 'NWS Forecast', data: datasetNWS, borderColor: '#3b82f6', backgroundColor: '#3b82f6', borderWidth: 2, tension: 0.1, pointRadius: 0, pointHitRadius: 10 },
-                  { label: 'WU Forecast', data: datasetWU, borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 2, tension: 0.1, pointRadius: 0, pointHitRadius: 10 },
-                  { label: 'OM Forecast', data: datasetOM, borderColor: '#8b5cf6', backgroundColor: '#8b5cf6', borderWidth: 2, tension: 0.1, pointRadius: 0, pointHitRadius: 10 },
-                  { label: 'Observed Temp', data: datasetOBS, borderColor: '#10b981', backgroundColor: '#10b981', borderWidth: 3, borderDash: [5, 5], tension: 0.1, pointRadius: 0, pointHitRadius: 10 }
+                  { label: 'NWS Forecast', data: datasetNWS, borderColor: '#3b82f6', backgroundColor: '#3b82f6', borderWidth: 2, tension: 0.1, pointRadius: 2, pointHitRadius: 10, spanGaps: true },
+                  { label: 'WU Forecast', data: datasetWU, borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 2, tension: 0.1, pointRadius: 2, pointHitRadius: 10, spanGaps: true },
+                  { label: 'OM Forecast', data: datasetOM, borderColor: '#8b5cf6', backgroundColor: '#8b5cf6', borderWidth: 2, tension: 0.1, pointRadius: 2, pointHitRadius: 10, spanGaps: true },
+                  { label: 'Observed Temp', data: datasetOBS, borderColor: '#10b981', backgroundColor: '#10b981', borderWidth: 3, borderDash: [5, 5], tension: 0.1, pointRadius: 2, pointHitRadius: 10, spanGaps: true }
               ]
           },
           options: {
@@ -518,7 +521,6 @@
     
     window.dashboardData = await Promise.all(STATIONS.map(st => fetchStationData(st)));
     
-    // Sort results to match the configured UI order
     window.dashboardData.sort((a, b) => STATIONS.findIndex(s => s.id === a.id) - STATIONS.findIndex(s => s.id === b.id));
     
     renderDashboard(window.dashboardData);
