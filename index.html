@@ -89,14 +89,6 @@
   window.chartViews = {}; 
   let chartInstances = {};
 
-  function applyCustomSort() {
-      const savedOrder = JSON.parse(localStorage.getItem('customStationOrder')) || [];
-      if (savedOrder.length === STATIONS.length) {
-          STATIONS.sort((a, b) => savedOrder.indexOf(a.id) - savedOrder.indexOf(b.id));
-      }
-  }
-  applyCustomSort();
-
   window.changeOrder = function(stId, newPosStr) {
       const newIndex = parseInt(newPosStr) - 1;
       const oldIndex = STATIONS.findIndex(s => s.id === stId);
@@ -104,7 +96,15 @@
 
       const [movedItem] = STATIONS.splice(oldIndex, 1);
       STATIONS.splice(newIndex, 0, movedItem);
-      localStorage.setItem('customStationOrder', JSON.stringify(STATIONS.map(s => s.id)));
+      
+      const newOrderIds = STATIONS.map(s => s.id);
+      
+      // Send the new layout to the server to be synced globally
+      fetch('/api/order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order: newOrderIds })
+      }).catch(e => console.error("Failed to sync order", e));
       
       if (window.dashboardData.length > 0) {
           window.dashboardData.sort((a, b) => STATIONS.findIndex(s => s.id === a.id) - STATIONS.findIndex(s => s.id === b.id));
@@ -139,7 +139,6 @@
   function renderDashboard(results) {
       const container = document.getElementById('dashboard');
       
-      // Pass 'color' to match the chart colors perfectly
       const basicFmt = (temp, time, color) => {
           if (temp === "Err" || temp === "—" || temp == null) return "—";
           return `<span style="color: ${color}; font-weight: 700;">${temp}°F</span> <span class="time-sub">@ ${time} PT</span>`;
@@ -152,7 +151,7 @@
               const diff = parseFloat(temp) - parseFloat(cacheObj.initialTemp);
               if (Math.abs(diff) >= 0.1) {
                   const sign = diff > 0 ? "+" : "";
-                  const magColor = getMagnitudeColor(diff); // Keep shift magnitude color separate
+                  const magColor = getMagnitudeColor(diff); 
                   cellHtml += `<span style="display:block; font-size:11px; margin-top:4px; font-weight:700; color:${magColor};" title="Morning forecast was ${cacheObj.initialTemp}°F">(${sign}${diff.toFixed(1)}°)</span>`;
               }
           }
@@ -335,6 +334,17 @@
         document.getElementById('dashboard').innerHTML = '<div style="opacity: 0.6; font-weight: 600;">Connecting to Node Engine...</div>';
     }
     timeEl.textContent = "Syncing with Engine...";
+
+    // Ask server for the globally saved order
+    try {
+        const orderRes = await fetch('/api/order');
+        if (orderRes.ok) {
+            const savedOrder = await orderRes.json();
+            if (savedOrder && savedOrder.length === STATIONS.length) {
+                STATIONS.sort((a, b) => savedOrder.indexOf(a.id) - savedOrder.indexOf(b.id));
+            }
+        }
+    } catch(e) { console.error("Failed to load order", e); }
 
     try {
         const res = await fetch('/api/dashboard');

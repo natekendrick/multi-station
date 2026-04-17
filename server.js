@@ -36,9 +36,11 @@ const STATIONS = [
 
 const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || process.cwd();
 const CACHE_FILE = path.join(DATA_DIR, "forecast_history.json");
+const ORDER_FILE = path.join(DATA_DIR, "station_order.json"); // NEW: Global Order Cache
 
 let memoryDB = {};
-let currentDashboardState = []; // Holds the pre-compiled UI data for the frontend
+let customOrder = [];
+let currentDashboardState = []; 
 let isFetching = false;
 
 // --- UTILS ---
@@ -96,7 +98,7 @@ function saveForecastToMemory(stid, dateStr, model, temp, time) {
     if (!existing.history) existing.history = [{ ts: Date.now() - 600000, temp: existing.initialTemp, time }];
     
     existing.history.push({ ts: Date.now(), temp, time });
-    if (existing.history.length > 288) existing.history.shift(); // Cap at ~48 hours of 10-min dots
+    if (existing.history.length > 288) existing.history.shift(); 
   }
 }
 
@@ -109,6 +111,13 @@ async function initDB() {
   } catch (e) {
     console.log("⚠️ No history file found. Starting fresh.");
     memoryDB = {};
+  }
+  
+  try {
+    const orderData = await fs.readFile(ORDER_FILE, "utf-8");
+    customOrder = JSON.parse(orderData);
+  } catch (e) {
+    customOrder = []; // Starts default East to West on fresh install
   }
 }
 
@@ -282,7 +291,7 @@ async function updateAllStations() {
             const old = currentDashboardState.find(d => d.id === st.id);
             if(old) newResults.push(old);
         }
-        await new Promise(r => setTimeout(r, 250)); // Gentle API staggering
+        await new Promise(r => setTimeout(r, 250));
     }
     
     currentDashboardState = newResults;
@@ -298,12 +307,28 @@ async function updateAllStations() {
 // Start Background Engine
 initDB().then(() => {
     updateAllStations();
-    setInterval(updateAllStations, 10 * 60 * 1000); // Exact 10 minute engine loop
+    setInterval(updateAllStations, 10 * 60 * 1000); 
 });
 
-// Serve frontend pre-compiled data
+// --- UI APIs ---
 app.get("/api/dashboard", (req, res) => {
     res.json(currentDashboardState);
+});
+
+// GET global order
+app.get("/api/order", (req, res) => {
+    res.json(customOrder);
+});
+
+// POST new global order
+app.post("/api/order", async (req, res) => {
+    if (req.body && req.body.order) {
+        customOrder = req.body.order;
+        try {
+            await fs.writeFile(ORDER_FILE, JSON.stringify(customOrder));
+        } catch(e) {}
+    }
+    res.json({ success: true });
 });
 
 app.listen(PORT, () => console.log(`🌤️ Dashboard running at http://localhost:${PORT}`));
