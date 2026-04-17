@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Multi-station Dashboard</title>
+  
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
   <style>
     :root { color-scheme: light dark; }
     body { font-family: system-ui, -apple-system, sans-serif; margin: 20px; line-height: 1.4; background: #f9fafb; color: #111827; }
@@ -15,18 +19,32 @@
     button { padding: 8px 16px; border-radius: 8px; border: 1px solid #d1d5db; background: transparent; cursor: pointer; color: inherit; font-weight: 600; }
     button:hover { background: rgba(127,127,127,0.1); }
 
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
     .card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
     @media (prefers-color-scheme: dark) { .card { background: #1f2937; border-color: #374151; } }
 
-    .st-header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid rgba(127,127,127,0.2); padding-bottom: 8px; margin-bottom: 12px; }
-    .st-name { font-size: 20px; font-weight: 800; }
+    .card-interior { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; }
+    @media (max-width: 900px) { .card-interior { grid-template-columns: 1fr; } }
     
+    .chart-container { position: relative; width: 100%; min-height: 250px; }
+
+    /* New Toggle Styles for the Chart View */
+    .toggle-group { display: flex; gap: 4px; background: rgba(127,127,127,0.1); padding: 3px; border-radius: 6px; }
+    .toggle-group button { padding: 4px 10px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; color: inherit; font-weight: 500;}
+    .toggle-group button.active { background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.1); font-weight: 700; color: #2563eb;}
+    @media (prefers-color-scheme: dark) { .toggle-group button.active { background: #374151; color: #60a5fa;} }
+
+    .st-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(127,127,127,0.2); padding-bottom: 8px; margin-bottom: 12px; }
+    .st-name { font-size: 20px; font-weight: 800; display: flex; align-items: baseline; gap: 12px; }
+    
+    .order-select { padding: 4px 8px; border-radius: 6px; border: 1px solid #d1d5db; background: transparent; color: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+    @media (prefers-color-scheme: dark) { .order-select { background: #1f2937; border-color: #4b5563; } }
+
     .metar-section { margin-bottom: 16px; }
     .metar-row { display: flex; justify-content: space-between; align-items: baseline; }
     .val-large { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; color: #2563eb; }
     
-    .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; margin-top: 12px; margin-bottom: 4px; font-weight: 700; }
+    .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; margin-bottom: 4px; font-weight: 700; }
     
     table.forecast-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; text-align: right; }
     table.forecast-table th { font-weight: 600; opacity: 0.7; padding-bottom: 6px; border-bottom: 1px solid rgba(127,127,127,0.2); }
@@ -49,8 +67,6 @@
       <button onclick="refreshAll()">Refresh Data</button>
     </div>
   </header>
-
-  <div id="alertsContainer" style="margin-bottom: 16px; display: none;"></div>
 
   <div class="grid" id="dashboard"></div>
 
@@ -81,11 +97,39 @@
     { id: "KSFO", name: "San Francisco", lat: 37.6196, lon: -122.3656, tz: "America/Los_Angeles" }
   ];
 
-  STATIONS.sort((a, b) => b.lon - a.lon);
+  window.dashboardData = [];
+  window.chartViews = {}; // Tracks whether 'today' or 'yesterday' is selected for each chart
+  let chartInstances = {};
 
+  // Custom UI Order Logic
+  function applyCustomSort() {
+      const savedOrder = JSON.parse(localStorage.getItem('customStationOrder')) || [];
+      if (savedOrder.length === STATIONS.length) {
+          STATIONS.sort((a, b) => savedOrder.indexOf(a.id) - savedOrder.indexOf(b.id));
+      } else {
+          STATIONS.sort((a, b) => b.lon - a.lon);
+          localStorage.setItem('customStationOrder', JSON.stringify(STATIONS.map(s => s.id)));
+      }
+  }
+  applyCustomSort();
+
+  window.changeOrder = function(stId, newPosStr) {
+      const newIndex = parseInt(newPosStr) - 1;
+      const oldIndex = STATIONS.findIndex(s => s.id === stId);
+      if (oldIndex === -1 || newIndex === oldIndex) return;
+
+      const [movedItem] = STATIONS.splice(oldIndex, 1);
+      STATIONS.splice(newIndex, 0, movedItem);
+      localStorage.setItem('customStationOrder', JSON.stringify(STATIONS.map(s => s.id)));
+      
+      if (window.dashboardData.length > 0) {
+          window.dashboardData.sort((a, b) => STATIONS.findIndex(s => s.id === a.id) - STATIONS.findIndex(s => s.id === b.id));
+          renderDashboard(window.dashboardData);
+      }
+  }
+
+  // Helper Functions
   const toF = (c) => (c * 9/5) + 32;
-
-  let activeAlerts = []; 
 
   function getStationLocalDateString(dateMs, tz) {
     return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dateMs));
@@ -93,6 +137,14 @@
   
   function getPTMilitaryTime(dateMs) {
     return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(dateMs));
+  }
+
+  // Returns the precise Unix timestamp for Midnight PT of whatever day 'ms' falls on
+  function getMidnightPT(ms) {
+      const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date(ms));
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', timeZoneName: 'shortOffset' }).formatToParts(new Date(ms));
+      const offset = parts.find(p => p.type === 'timeZoneName').value.replace('GMT', '') || '-08:00';
+      return Date.parse(`${dateStr}T00:00:00${offset}`);
   }
 
   function extractTimeMs(obs) {
@@ -118,101 +170,6 @@
     } catch (e) { console.error("Failed to save to server database", e); }
   }
 
-  function getMagnitudeColor(delta) {
-      const absD = Math.abs(delta);
-      if (absD >= 3.0) return "#f59e0b"; // Orange (Huge Move)
-      if (absD >= 2.0) return "#8b5cf6"; // Purple (Big Move)
-      if (absD >= 1.0) return "#3b82f6"; // Blue (Standard Move)
-      return "inherit"; 
-  }
-
-  function generateSparkline(history) {
-      if (!history || history.length < 2) return `<span style="opacity:0.4; font-size:11px;">Flat</span>`;
-      
-      const minT = Math.min(...history.map(h => parseFloat(h.temp)));
-      const maxT = Math.max(...history.map(h => parseFloat(h.temp)));
-      const minTime = history[0].ts;
-      const maxTime = history[history.length - 1].ts;
-      
-      const rangeT = maxT - minT || 1; 
-      const rangeTime = maxTime - minTime || 1;
-      
-      const width = 80;
-      const height = 24;
-      const pts = history.map(h => {
-          const x = ((h.ts - minTime) / rangeTime) * width;
-          const y = height - (((parseFloat(h.temp) - minT) / rangeT) * height);
-          return `${x},${y}`;
-      }).join(" ");
-      
-      const lastX = width;
-      const lastY = height - (((parseFloat(history[history.length-1].temp) - minT) / rangeT) * height);
-      const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const lineColor = isDark ? "#9ca3af" : "#6b7280";
-
-      return `
-      <svg viewBox="-4 -4 88 32" style="width:80px; height:28px; overflow:visible;">
-          <polyline points="${pts}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-          <circle cx="${lastX}" cy="${lastY}" r="3" fill="#3b82f6" />
-      </svg>`;
-  }
-
-  function getRecentShift(history, currentTemp) {
-      if (!history || history.length === 0) return { str: "—", changed: false };
-      
-      const thirtyMinsAgo = Date.now() - (30 * 60000); 
-      let anchor = history[0];
-      
-      for (let i = history.length - 1; i >= 0; i--) {
-          if (history[i].ts <= thirtyMinsAgo) {
-              anchor = history[i];
-              break;
-          }
-      }
-      
-      const diff = parseFloat(currentTemp) - parseFloat(anchor.temp);
-      if (Math.abs(diff) < 0.1) return { str: `<span style="opacity:0.4;">No change</span>`, changed: false };
-      
-      const sign = diff > 0 ? "+" : "";
-      const color = getMagnitudeColor(diff); 
-      return { 
-          str: `<strong style="color:${color}">${sign}${diff.toFixed(1)}°</strong> <br/><span class="time-sub">from ${parseFloat(anchor.temp).toFixed(1)}°</span>`, 
-          changed: true 
-      };
-  }
-
-  function processStationAlerts(stId, stName, stLon, todayStr, nwsTemp, nwsCache, wuTemp, wuCache, omTemp, omCache) {
-      let stAlerts = [];
-      
-      const evaluate = (model, temp, cache) => {
-          if (!temp || temp === "Err" || temp === "—" || !cache || !cache.initialTemp) return;
-          const diff = parseFloat(temp) - parseFloat(cache.initialTemp);
-          if (Math.abs(diff) >= 1.0) {
-              stAlerts.push({
-                  city: stName, source: model, currentTemp: parseFloat(temp).toFixed(1),
-                  delta: diff, initialTemp: parseFloat(cache.initialTemp).toFixed(1),
-                  time: cache.time || "N/A", cacheObj: cache, lon: stLon
-              });
-          }
-      };
-
-      evaluate("NWS Official", nwsTemp, nwsCache);
-      evaluate("WUnderground", wuTemp, wuCache);
-      evaluate("Open-Meteo", omTemp, omCache);
-
-      if (stAlerts.length > 0) {
-          stAlerts.sort((a, b) => {
-              const diffA = Math.abs(a.delta);
-              const diffB = Math.abs(b.delta);
-              if (diffA !== diffB) return diffB - diffA;
-              if (a.source === "WUnderground") return -1;
-              if (b.source === "WUnderground") return 1;
-              return 0;
-          });
-          activeAlerts.push(stAlerts[0]); 
-      }
-  }
-
   async function fetchStationData(st) {
     const nowMs = Date.now();
     const todayStr = getStationLocalDateString(nowMs, st.tz);
@@ -231,7 +188,7 @@
 
     const results = await Promise.allSettled([pAWC, pNWS, pWU, pOM, pWUCurr]);
 
-    // 1. Process AWC & Calculate "Actual High So Far Today"
+    // 1. Process AWC (METAR)
     let currentTempF = "—", obsTimeStr = "—", yestActualF = "—", yestActualTime = "—";
     let actualTodayC = -999, actualTodayTime = null;
 
@@ -266,11 +223,7 @@
     }
 
     let actualTodayF = -999;
-    let actualTodayTimeMsStr = null;
-    if (actualTodayC !== -999) {
-        actualTodayF = parseFloat(toF(actualTodayC).toFixed(1));
-        actualTodayTimeMsStr = getPTMilitaryTime(actualTodayTime);
-    }
+    if (actualTodayC !== -999) actualTodayF = parseFloat(toF(actualTodayC).toFixed(1));
 
     // 2. Process NWS
     let nwsToday = null, nwsTodayTime = null, nwsTmrw = null, nwsTmrwTime = null;
@@ -283,13 +236,7 @@
             if (dateStr === todayStr && p.temperature > maxT) { maxT = p.temperature; maxTTm = ms; }
             if (dateStr === tmrwStr && p.temperature > maxTm) { maxTm = p.temperature; maxTmTm = ms; }
         });
-        
-        // ACTUALS FLOOR PROTECTION: Cannot forecast lower than what was already hit
-        if (actualTodayF !== -999 && actualTodayF > maxT) {
-            maxT = actualTodayF;
-            maxTTm = actualTodayTime; // Preserves the raw ms of the actual hit
-        }
-
+        if (actualTodayF !== -999 && actualTodayF > maxT) { maxT = actualTodayF; maxTTm = actualTodayTime; }
         if (maxT !== -999) { nwsToday = maxT.toFixed(1); nwsTodayTime = typeof maxTTm === 'number' ? getPTMilitaryTime(maxTTm) : maxTTm; }
         if (maxTm !== -999) { nwsTmrw = maxTm.toFixed(1); nwsTmrwTime = getPTMilitaryTime(maxTmTm); }
     } else { nwsToday = "Err"; nwsTmrw = "Err"; }
@@ -306,13 +253,7 @@
             if (dateStr === todayStr && tArr[i] > maxT) { maxT = tArr[i]; maxTTm = ms; }
             if (dateStr === tmrwStr && tArr[i] > maxTm) { maxTm = tArr[i]; maxTmTm = ms; }
         }
-
-        // ACTUALS FLOOR PROTECTION: Cannot forecast lower than what was already hit
-        if (actualTodayF !== -999 && actualTodayF > maxT) {
-            maxT = actualTodayF;
-            maxTTm = actualTodayTime;
-        }
-
+        if (actualTodayF !== -999 && actualTodayF > maxT) { maxT = actualTodayF; maxTTm = actualTodayTime; }
         if (maxT !== -999) { wuToday = maxT.toFixed(1); wuTodayTime = typeof maxTTm === 'number' ? getPTMilitaryTime(maxTTm) : getPTMilitaryTime(maxTTm); }
         if (maxTm !== -999) { wuTmrw = maxTm.toFixed(1); wuTmrwTime = getPTMilitaryTime(maxTmTm); }
     } else { wuToday = "Err"; wuTmrw = "Err"; }
@@ -331,13 +272,7 @@
             if (dateStr === todayStr && temps[i] > tT) { tT = temps[i]; tTm = ms; }
             if (dateStr === tmrwStr && temps[i] > tmT) { tmT = temps[i]; tmTm = ms; }
         }
-
-        // ACTUALS FLOOR PROTECTION: Cannot forecast lower than what was already hit
-        if (actualTodayF !== -999 && actualTodayF > tT) {
-            tT = actualTodayF;
-            tTm = actualTodayTime;
-        }
-
+        if (actualTodayF !== -999 && actualTodayF > tT) { tT = actualTodayF; tTm = actualTodayTime; }
         if (yT !== -999) { omYest = yT.toFixed(1); omYestTime = getPTMilitaryTime(yTm); }
         if (tT !== -999) { omToday = tT.toFixed(1); omTodayTime = typeof tTm === 'number' ? getPTMilitaryTime(tTm) : getPTMilitaryTime(tTm); }
         if (tmT !== -999) { omTmrw = tmT.toFixed(1); omTmrwTime = getPTMilitaryTime(tmTm); }
@@ -345,15 +280,16 @@
 
     // 5. Process WU Current Observation
     let wuCurrentTempF = "—";
+    let wuCurrentTimeMs = Date.now();
     if (results[4].status === "fulfilled" && results[4].value.temperature != null) {
         wuCurrentTempF = results[4].value.temperature.toFixed(1);
     }
 
-    processStationAlerts(st.id, st.name, st.lon, todayStr, nwsToday, todayHistory["NWS"], wuToday, todayHistory["WU"], omToday, todayHistory["OM"]);
-
+    // Save Live Data
     await saveForecastToServer(st.id, todayStr, "NWS", nwsToday, nwsTodayTime);
     await saveForecastToServer(st.id, todayStr, "WU", wuToday, wuTodayTime);
     await saveForecastToServer(st.id, todayStr, "OM", omToday, omTodayTime);
+    if (wuCurrentTempF !== "—") await saveForecastToServer(st.id, todayStr, "OBS", wuCurrentTempF, getPTMilitaryTime(wuCurrentTimeMs));
 
     return {
       id: st.id, name: st.name,
@@ -362,96 +298,216 @@
       nwsToday, nwsTodayTime, nwsTmrw, nwsTmrwTime, 
       wuToday, wuTodayTime, wuTmrw, wuTmrwTime, 
       omToday, omTodayTime, omTmrw, omTmrwTime, omYest, omYestTime,
-      wuYestTemp: yestHistory["WU"] ? yestHistory["WU"].temp : "—", wuYestTime: yestHistory["WU"] ? yestHistory["WU"].time : "",
-      nwsTodayCache: todayHistory["NWS"], wuTodayCache: todayHistory["WU"], omTodayCache: todayHistory["OM"]
+      
+      // Return yesterday's full DB cache for the toggles
+      nwsYestCache: yestHistory["NWS"] || {},
+      wuYestCache: yestHistory["WU"] || {},
+      omYestCache: yestHistory["OM"] || {},
+      obsYestCache: yestHistory["OBS"] || {},
+
+      // Today's Caches
+      nwsTodayCache: todayHistory["NWS"] || {}, 
+      wuTodayCache: todayHistory["WU"] || {}, 
+      omTodayCache: todayHistory["OM"] || {},
+      obsTodayCache: todayHistory["OBS"] || {}
     };
   }
 
-  function renderCard(data) {
-    const basicFmt = (temp, time) => {
-        if (temp === "Err" || temp === "—" || temp == null) return "—";
-        return `${temp}°F <span class="time-sub">@ ${time} PT</span>`;
-    };
+  function renderDashboard(results) {
+      const container = document.getElementById('dashboard');
+      
+      const basicFmt = (temp, time) => {
+          if (temp === "Err" || temp === "—" || temp == null) return "—";
+          return `${temp}°F <span class="time-sub">@ ${time} PT</span>`;
+      };
 
-    const fmtCardToday = (temp, time, cacheObj) => {
-        if (temp === "Err" || temp === "—" || temp == null) return "—";
-        let cellHtml = `${temp}°F <span class="time-sub">@ ${time} PT</span>`;
-        
-        if (cacheObj && cacheObj.initialTemp) {
-            const diff = parseFloat(temp) - parseFloat(cacheObj.initialTemp);
-            if (Math.abs(diff) >= 0.1) {
-                const sign = diff > 0 ? "+" : "";
-                const color = getMagnitudeColor(diff);
-                cellHtml += `<span style="display:block; font-size:11px; margin-top:4px; font-weight:700; color:${color};" title="Morning forecast was ${cacheObj.initialTemp}°F">
-                  (${sign}${diff.toFixed(1)}°)
-                </span>`;
-            }
-        }
-        return cellHtml;
-    };
+      const fmtCardToday = (temp, time, cacheObj) => {
+          if (temp === "Err" || temp === "—" || temp == null) return "—";
+          let cellHtml = `${temp}°F <span class="time-sub">@ ${time} PT</span>`;
+          if (cacheObj && cacheObj.initialTemp) {
+              const diff = parseFloat(temp) - parseFloat(cacheObj.initialTemp);
+              if (Math.abs(diff) >= 0.1) {
+                  const sign = diff > 0 ? "+" : "";
+                  cellHtml += `<span style="display:block; font-size:11px; margin-top:4px; opacity:0.8;" title="Morning forecast was ${cacheObj.initialTemp}°F">(${sign}${diff.toFixed(1)}°)</span>`;
+              }
+          }
+          return cellHtml;
+      };
 
-    return `
-      <div class="card">
-        <div class="st-header">
-          <div class="st-name">${data.name} <span style="font-size: 14px; opacity:0.6;">(${data.id})</span></div>
-        </div>
+      let html = '';
+      
+      results.forEach((data, index) => {
+          const view = window.chartViews[data.id] || 'today';
+          let optionsHtml = STATIONS.map((s, i) => `<option value="${i+1}" ${i === index ? 'selected' : ''}>${i+1}</option>`).join('');
 
-        <div class="metar-section">
-            <div class="section-title">Current Observations</div>
-            <div class="metar-row" style="margin-bottom: 6px;">
-                <span style="font-weight: 600; opacity: 0.9;">WUnderground (Now):</span>
-                <span class="val-large" style="color: #ea580c;">${data.wuCurrentTempF}°F</span>
+          html += `
+            <div class="card">
+              <div class="st-header">
+                <div class="st-name">${data.name} <span style="font-size: 14px; opacity:0.6;">(${data.id})</span></div>
+                <select class="order-select" onchange="changeOrder('${data.id}', this.value)" title="Change Dashboard Order">
+                    ${optionsHtml}
+                </select>
+              </div>
+
+              <div class="card-interior">
+                  <div style="display: flex; flex-direction: column;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                          <div class="section-title" style="margin: 0;">24H Forecast Trend</div>
+                          <div class="toggle-group" id="toggle-${data.id}">
+                              <button id="btn-${data.id}-today" class="${view==='today'?'active':''}" onclick="switchChart('${data.id}', 'today')">Today</button>
+                              <button id="btn-${data.id}-yesterday" class="${view==='yesterday'?'active':''}" onclick="switchChart('${data.id}', 'yesterday')">Yesterday</button>
+                          </div>
+                      </div>
+                      <div class="chart-container" style="flex-grow: 1;">
+                          <canvas id="chart-${data.id}"></canvas>
+                      </div>
+                  </div>
+
+                  <div>
+                      <div class="metar-section" style="margin-bottom: 24px;">
+                          <div class="section-title">Current Observations</div>
+                          <div class="metar-row" style="margin-bottom: 6px;">
+                              <span style="font-weight: 600; opacity: 0.9;">WUnderground (Now):</span>
+                              <span class="val-large" style="color: #ea580c;">${data.wuCurrentTempF}°F</span>
+                          </div>
+                          <div class="metar-row">
+                              <span style="font-weight: 600; opacity: 0.9;">NWS METAR <span style="font-size: 11px; font-weight: normal; opacity: 0.7;">(@ ${data.obsTimeStr} PT)</span>:</span>
+                              <span class="val-large">${data.currentTempF}°F</span>
+                          </div>
+                      </div>
+
+                      <div class="section-title">Forecast Model Consensus</div>
+                      <table class="forecast-table">
+                          <thead>
+                              <tr>
+                                  <th class="left">Source</th>
+                                  <th>Yesterday</th>
+                                  <th>Today (HoD)</th>
+                                  <th>Tomorrow</th>
+                              </tr>
+                          </thead>
+                          <tbody>
+                              <tr>
+                                  <td class="left">NWS <span class="badge">Actual</span></td>
+                                  <td>${basicFmt(data.yestActualF, data.yestActualTime)}</td>
+                                  <td>${fmtCardToday(data.nwsToday, data.nwsTodayTime, data.nwsTodayCache)}</td>
+                                  <td>${basicFmt(data.nwsTmrw, data.nwsTmrwTime)}</td>
+                              </tr>
+                              <tr>
+                                  <td class="left">WUnderground</td>
+                                  <td>${basicFmt(data.wuYestTemp, data.wuYestTime)}</td>
+                                  <td>${fmtCardToday(data.wuToday, data.wuTodayTime, data.wuTodayCache)}</td>
+                                  <td>${basicFmt(data.wuTmrw, data.wuTmrwTime)}</td>
+                              </tr>
+                              <tr>
+                                  <td class="left">Open-Meteo</td>
+                                  <td>${basicFmt(data.omYest, data.omYestTime)}</td>
+                                  <td>${fmtCardToday(data.omToday, data.omTodayTime, data.omTodayCache)}</td>
+                                  <td>${basicFmt(data.omTmrw, data.omTmrwTime)}</td>
+                              </tr>
+                          </tbody>
+                      </table>
+                  </div>
+              </div>
             </div>
-            <div class="metar-row">
-                <span style="font-weight: 600; opacity: 0.9;">NWS METAR <span style="font-size: 11px; font-weight: normal; opacity: 0.7;">(@ ${data.obsTimeStr} PT)</span>:</span>
-                <span class="val-large">${data.currentTempF}°F</span>
-            </div>
-        </div>
-
-        <div class="section-title" style="margin-top: 18px;">Forecast Model Consensus</div>
-        <table class="forecast-table">
-            <thead>
-                <tr>
-                    <th class="left">Source</th>
-                    <th>Yesterday</th>
-                    <th>Today</th>
-                    <th>Tomorrow</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td class="left">NWS <span class="badge">Actual</span></td>
-                    <td>${basicFmt(data.yestActualF, data.yestActualTime)}</td>
-                    <td>${fmtCardToday(data.nwsToday, data.nwsTodayTime, data.nwsTodayCache)}</td>
-                    <td>${basicFmt(data.nwsTmrw, data.nwsTmrwTime)}</td>
-                </tr>
-                <tr>
-                    <td class="left">WUnderground</td>
-                    <td>${basicFmt(data.wuYestTemp, data.wuYestTime)}</td>
-                    <td>${fmtCardToday(data.wuToday, data.wuTodayTime, data.wuTodayCache)}</td>
-                    <td>${basicFmt(data.wuTmrw, data.wuTmrwTime)}</td>
-                </tr>
-                <tr>
-                    <td class="left">Open-Meteo</td>
-                    <td>${basicFmt(data.omYest, data.omYestTime)}</td>
-                    <td>${fmtCardToday(data.omToday, data.omTodayTime, data.omTodayCache)}</td>
-                    <td>${basicFmt(data.omTmrw, data.omTmrwTime)}</td>
-                </tr>
-            </tbody>
-        </table>
-      </div>
-    `;
+          `;
+      });
+      
+      container.innerHTML = html;
+      results.forEach(d => renderSingleChart(d.id));
   }
 
+  // --- CHART RENDERING SYSTEM ---
+  window.switchChart = function(stId, view) {
+      window.chartViews[stId] = view;
+      document.querySelectorAll(`#toggle-${stId} button`).forEach(btn => btn.classList.remove('active'));
+      document.getElementById(`btn-${stId}-${view}`).classList.add('active');
+      renderSingleChart(stId);
+  };
+
+  function renderSingleChart(stId) {
+      const data = window.dashboardData.find(d => d.id === stId);
+      if (!data) return;
+
+      const ctx = document.getElementById(`chart-${data.id}`);
+      if (!ctx) return;
+
+      if (chartInstances[data.id]) {
+          chartInstances[data.id].destroy();
+      }
+
+      const view = window.chartViews[data.id] || 'today';
+      const targetMs = view === 'today' ? Date.now() : Date.now() - 86400000;
+      
+      // Lock the graph to a perfect 24-hour Midnight to Midnight view based on Pacific Time
+      const minMs = getMidnightPT(targetMs);
+      const maxMs = minMs + 86400000;
+
+      const parseHistory = (historyArr) => {
+          if (!historyArr || !Array.isArray(historyArr)) return [];
+          return historyArr
+              .filter(h => h.ts >= minMs && h.ts <= maxMs && h.temp !== "—" && h.temp !== "Err")
+              .map(h => ({ x: h.ts, y: parseFloat(h.temp) }));
+      };
+
+      const datasetNWS = parseHistory(view === 'today' ? data.nwsTodayCache.history : data.nwsYestCache.history);
+      const datasetWU = parseHistory(view === 'today' ? data.wuTodayCache.history : data.wuYestCache.history);
+      const datasetOM = parseHistory(view === 'today' ? data.omTodayCache.history : data.omYestCache.history);
+      const datasetOBS = parseHistory(view === 'today' ? data.obsTodayCache.history : data.obsYestCache.history);
+
+      const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const gridColor = isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)";
+      const textColor = isDark ? "#9ca3af" : "#6b7280";
+
+      chartInstances[data.id] = new Chart(ctx, {
+          type: 'line',
+          data: {
+              datasets: [
+                  { label: 'NWS Forecast', data: datasetNWS, borderColor: '#3b82f6', backgroundColor: '#3b82f6', borderWidth: 2, tension: 0.1, pointRadius: 0, pointHitRadius: 10 },
+                  { label: 'WU Forecast', data: datasetWU, borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 2, tension: 0.1, pointRadius: 0, pointHitRadius: 10 },
+                  { label: 'OM Forecast', data: datasetOM, borderColor: '#8b5cf6', backgroundColor: '#8b5cf6', borderWidth: 2, tension: 0.1, pointRadius: 0, pointHitRadius: 10 },
+                  { label: 'Observed Temp', data: datasetOBS, borderColor: '#10b981', backgroundColor: '#10b981', borderWidth: 3, borderDash: [5, 5], tension: 0.1, pointRadius: 0, pointHitRadius: 10 }
+              ]
+          },
+          options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              interaction: { mode: 'index', intersect: false },
+              plugins: {
+                  legend: { position: 'top', labels: { color: textColor, boxWidth: 12, font: { size: 11 } } },
+                  tooltip: { titleFont: { size: 13 }, bodyFont: { size: 12 }, padding: 10 }
+              },
+              scales: {
+                  x: {
+                      type: 'time',
+                      time: { unit: 'hour', tooltipFormat: 'HH:mm' },
+                      min: minMs,
+                      max: maxMs,
+                      grid: { color: gridColor, drawBorder: false },
+                      ticks: { color: textColor, maxRotation: 0, maxTicksLimit: 8, stepSize: 3 }
+                  },
+                  y: {
+                      grid: { color: gridColor, drawBorder: false },
+                      ticks: { color: textColor, callback: (val) => val + '°' },
+                      suggestedMin: (ctx) => {
+                          const allVals = [...datasetNWS, ...datasetWU, ...datasetOM, ...datasetOBS].map(d => d.y);
+                          return allVals.length ? Math.min(...allVals) - 1 : 0;
+                      },
+                      suggestedMax: (ctx) => {
+                          const allVals = [...datasetNWS, ...datasetWU, ...datasetOM, ...datasetOBS].map(d => d.y);
+                          return allVals.length ? Math.max(...allVals) + 1 : 100;
+                      }
+                  }
+              }
+          }
+      });
+  }
+
+  // --- MASTER INIT ---
   async function refreshAll() {
-    const container = document.getElementById('dashboard');
     const timeEl = document.getElementById('refreshTimestamp');
-    const alertsContainer = document.getElementById('alertsContainer');
-    
-    activeAlerts = [];
-    
-    if (!container.innerHTML) {
-        container.innerHTML = '<div style="opacity: 0.6; font-weight: 600;">Fetching multi-source consensus...</div>';
+    if (!window.dashboardData.length) {
+        document.getElementById('dashboard').innerHTML = '<div style="opacity: 0.6; font-weight: 600;">Fetching multi-source consensus and charting data...</div>';
     }
     timeEl.textContent = "Refreshing...";
 
@@ -460,65 +516,12 @@
         if (histRes.ok) globalHistoryDB = await histRes.json();
     } catch(e) { console.error("Failed to load history DB", e); }
     
-    const results = await Promise.all(STATIONS.map(st => fetchStationData(st)));
-    container.innerHTML = results.map(renderCard).join('');
+    window.dashboardData = await Promise.all(STATIONS.map(st => fetchStationData(st)));
     
-    if (activeAlerts.length > 0) {
-        activeAlerts.sort((a, b) => b.lon - a.lon);
-
-        let tableRows = activeAlerts.map(a => {
-            const sign = a.delta > 0 ? "+" : "";
-            const color = getMagnitudeColor(a.delta);
-            const recentShift = getRecentShift(a.cacheObj.history, a.currentTemp);
-            const sparkline = generateSparkline(a.cacheObj.history);
-
-            return `
-            <tr>
-                <td class="left"><strong>${a.city}</strong></td>
-                <td>
-                    <span style="font-weight: 700;">${a.currentTemp}°F</span><br/>
-                    <span style="font-size: 10px; opacity: 0.7;">${a.source}</span>
-                </td>
-                <td>
-                    <span style="font-weight: 700; color: ${color};">${sign}${a.delta.toFixed(1)}°</span>
-                </td>
-                <td style="text-align: center;">${recentShift.str}</td>
-                <td>${sparkline}</td>
-                <td>${a.initialTemp}°F <span class="time-sub">@ Morning</span></td>
-            </tr>`;
-        }).join('');
-
-        alertsContainer.innerHTML = `
-            <div class="card" style="border-color: #374151; background: rgba(0,0,0,0.02);">
-                <div class="st-header" style="cursor: pointer; border-bottom: none; margin-bottom: 0; padding-bottom: 0;" onclick="const t = document.getElementById('alertsTableWrapper'); t.style.display = t.style.display === 'none' ? 'block' : 'none';">
-                    <div class="st-name" style="font-size: 18px;">⚠️ Active Forecast Shifts (≥ 1.0°F)</div>
-                    <div style="font-size: 13px; opacity: 0.8; font-weight: 600; text-decoration: underline;">Toggle View</div>
-                </div>
-                <div id="alertsTableWrapper" style="display: block; margin-top: 12px; border-top: 1px solid rgba(127,127,127,0.2); padding-top: 8px;">
-                    <table class="forecast-table">
-                        <thead>
-                            <tr>
-                                <th class="left">City</th>
-                                <th>New Temp</th>
-                                <th>Total Delta</th>
-                                <th style="text-align: center;">Last 30m Shift</th>
-                                <th>Intraday Trend</th>
-                                <th>Morning Baseline</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${tableRows}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
-        alertsContainer.style.display = 'block';
-    } else {
-        alertsContainer.style.display = 'none';
-        alertsContainer.innerHTML = '';
-    }
-
+    // Sort results to match the configured UI order
+    window.dashboardData.sort((a, b) => STATIONS.findIndex(s => s.id === a.id) - STATIONS.findIndex(s => s.id === b.id));
+    
+    renderDashboard(window.dashboardData);
     timeEl.textContent = `Last refreshed: ${getPTMilitaryTime(Date.now())} PT`;
   }
 
