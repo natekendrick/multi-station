@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 
 // --- PASTE YOUR DISCORD WEBHOOK URL HERE ---
-const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1494797659322454088/GLjyOlJHN6m8FxA0Cx2581iurzKsoatLtydwYfIHSWJQmGLagN0fTZlNv5bOutJiFcWU";
+const DISCORD_WEBHOOK_URL = "PASTE_YOUR_WEBHOOK_URL_HERE";
 
 const app = express();
 const PORT = process.env.PORT || 5179;
@@ -169,7 +169,7 @@ async function fetchStationData(st) {
 
     const [resAWC, resNWS, resWU, resOM, resWUCurr] = await Promise.all([pAWC, pNWS, pWU, pOM, pWUCurr]);
 
-    // 1. Process AWC
+    // 1. Process AWC (METAR Actuals)
     let currentTempF = "—", obsTimeStr = "—", yestActualF = "—", yestActualTime = "—";
     let actualTodayC = -999, actualTodayTime = null;
 
@@ -222,7 +222,7 @@ async function fetchStationData(st) {
         if (maxTm !== -999) { nwsTmrw = maxTm.toFixed(1); nwsTmrwTime = getPTMilitaryTime(maxTmTm); }
     } else { nwsToday = "Err"; nwsTmrw = "Err"; }
 
-    // 3. Process WU
+    // 3. Process WU Forecast
     let wuToday = null, wuTodayTime = null, wuTmrw = null, wuTmrwTime = null;
     if (resWU) {
         let maxT = -999, maxTTm = null, maxTm = -999, maxTmTm = null;
@@ -234,19 +234,25 @@ async function fetchStationData(st) {
             if (dateStr === todayStr && tArr[i] > maxT) { maxT = tArr[i]; maxTTm = ms; }
             if (dateStr === tmrwStr && tArr[i] > maxTm) { maxTm = tArr[i]; maxTmTm = ms; }
         }
+        
+        // ACTUALS FLOOR PROTECTION
         if (actualTodayF !== -999 && actualTodayF > maxT) { maxT = actualTodayF; maxTTm = actualTodayTime; }
         if (maxT !== -999) { wuToday = maxT.toFixed(1); wuTodayTime = typeof maxTTm === 'number' ? getPTMilitaryTime(maxTTm) : getPTMilitaryTime(maxTTm); }
         if (maxTm !== -999) { wuTmrw = maxTm.toFixed(1); wuTmrwTime = getPTMilitaryTime(maxTmTm); }
         
         // --- CHECK FOR DISCORD ALERT (WU SHIFTS) ---
         const lastWuTemp = (todayHistory["WU"] && todayHistory["WU"].temp !== "—") ? todayHistory["WU"].temp : null;
+        
         if (wuToday && wuToday !== "Err" && lastWuTemp && wuToday !== lastWuTemp) {
-            const diff = parseFloat(wuToday) - parseFloat(lastWuTemp);
-            // If you want to reduce spam, change 0.1 to 1.0 below.
-            if (Math.abs(diff) >= 0.1) {
-                const sign = diff > 0 ? "+" : "";
-                const alertMsg = `🚨 **${st.name}** | WUnderground Shift: **${sign}${diff.toFixed(1)}°F**\nNew HoD: **${wuToday}°F** (was ${lastWuTemp}°F)`;
-                sendDiscordAlert(alertMsg);
+            // ONLY ALERT IF the new forecast is actively driving a High that hasn't been hit yet
+            // (If the forecast drops but is still under actualTodayF, we don't care because actuals already locked the high).
+            if (actualTodayF === -999 || parseFloat(wuToday) > actualTodayF) {
+                const diff = parseFloat(wuToday) - parseFloat(lastWuTemp);
+                if (Math.abs(diff) >= 0.1) {
+                    const sign = diff > 0 ? "+" : "";
+                    const alertMsg = `🚨 **${st.name}** | WUnderground Shift: **${sign}${diff.toFixed(1)}°F**\nNew HoD: **${wuToday}°F** (was ${lastWuTemp}°F)`;
+                    sendDiscordAlert(alertMsg);
+                }
             }
         }
     } else { wuToday = "Err"; wuTmrw = "Err"; }
