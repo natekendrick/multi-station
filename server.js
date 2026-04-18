@@ -52,9 +52,12 @@ const toF = (c) => (c * 9/5) + 32;
 function getStationLocalDateString(dateMs, tz) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dateMs));
 }
-function getPTMilitaryTime(dateMs) {
-  return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(dateMs));
+
+// FIXED: Now formats to the exact local timezone of the specific station
+function getLocalTime(dateMs, tz) {
+  return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(dateMs));
 }
+
 function extractTimeMs(obs) {
   if (!obs) return null;
   if (typeof obs.obsTime === 'number') return obs.obsTime * 1000;
@@ -182,7 +185,7 @@ async function fetchStationData(st) {
        if (latest && latest.temp != null) {
            currentTempF = toF(latest.temp).toFixed(1);
            const latestMs = extractTimeMs(latest);
-           obsTimeStr = latestMs ? getPTMilitaryTime(latestMs) : "—";
+           obsTimeStr = latestMs ? getLocalTime(latestMs, st.tz) : "—";
        }
 
        let yestMaxC = -999, yMaxTime = null;
@@ -199,7 +202,7 @@ async function fetchStationData(st) {
        });
        if (yestMaxC !== -999) {
            yestActualF = toF(yestMaxC).toFixed(1);
-           yestActualTime = getPTMilitaryTime(yMaxTime);
+           yestActualTime = getLocalTime(yMaxTime, st.tz);
        }
     }
 
@@ -218,8 +221,8 @@ async function fetchStationData(st) {
             if (dateStr === tmrwStr && p.temperature > maxTm) { maxTm = p.temperature; maxTmTm = ms; }
         });
         if (actualTodayF !== -999 && actualTodayF > maxT) { maxT = actualTodayF; maxTTm = actualTodayTime; }
-        if (maxT !== -999) { nwsToday = maxT.toFixed(1); nwsTodayTime = typeof maxTTm === 'number' ? getPTMilitaryTime(maxTTm) : maxTTm; }
-        if (maxTm !== -999) { nwsTmrw = maxTm.toFixed(1); nwsTmrwTime = getPTMilitaryTime(maxTmTm); }
+        if (maxT !== -999) { nwsToday = maxT.toFixed(1); nwsTodayTime = typeof maxTTm === 'number' ? getLocalTime(maxTTm, st.tz) : maxTTm; }
+        if (maxTm !== -999) { nwsTmrw = maxTm.toFixed(1); nwsTmrwTime = getLocalTime(maxTmTm, st.tz); }
     } else { nwsToday = "Err"; nwsTmrw = "Err"; }
 
     // 3. Process WU Forecast
@@ -235,17 +238,13 @@ async function fetchStationData(st) {
             if (dateStr === tmrwStr && tArr[i] > maxTm) { maxTm = tArr[i]; maxTmTm = ms; }
         }
         
-        // ACTUALS FLOOR PROTECTION
         if (actualTodayF !== -999 && actualTodayF > maxT) { maxT = actualTodayF; maxTTm = actualTodayTime; }
-        if (maxT !== -999) { wuToday = maxT.toFixed(1); wuTodayTime = typeof maxTTm === 'number' ? getPTMilitaryTime(maxTTm) : getPTMilitaryTime(maxTTm); }
-        if (maxTm !== -999) { wuTmrw = maxTm.toFixed(1); wuTmrwTime = getPTMilitaryTime(maxTmTm); }
+        if (maxT !== -999) { wuToday = maxT.toFixed(1); wuTodayTime = typeof maxTTm === 'number' ? getLocalTime(maxTTm, st.tz) : getLocalTime(maxTTm, st.tz); }
+        if (maxTm !== -999) { wuTmrw = maxTm.toFixed(1); wuTmrwTime = getLocalTime(maxTmTm, st.tz); }
         
-        // --- CHECK FOR DISCORD ALERT (WU SHIFTS) ---
         const lastWuTemp = (todayHistory["WU"] && todayHistory["WU"].temp !== "—") ? todayHistory["WU"].temp : null;
         
         if (wuToday && wuToday !== "Err" && lastWuTemp && wuToday !== lastWuTemp) {
-            // ONLY ALERT IF the new forecast is actively driving a High that hasn't been hit yet
-            // (If the forecast drops but is still under actualTodayF, we don't care because actuals already locked the high).
             if (actualTodayF === -999 || parseFloat(wuToday) > actualTodayF) {
                 const diff = parseFloat(wuToday) - parseFloat(lastWuTemp);
                 if (Math.abs(diff) >= 0.1) {
@@ -272,9 +271,9 @@ async function fetchStationData(st) {
             if (dateStr === tmrwStr && temps[i] > tmT) { tmT = temps[i]; tmTm = ms; }
         }
         if (actualTodayF !== -999 && actualTodayF > tT) { tT = actualTodayF; tTm = actualTodayTime; }
-        if (yT !== -999) { omYest = yT.toFixed(1); omYestTime = getPTMilitaryTime(yTm); }
-        if (tT !== -999) { omToday = tT.toFixed(1); omTodayTime = typeof tTm === 'number' ? getPTMilitaryTime(tTm) : getPTMilitaryTime(tTm); }
-        if (tmT !== -999) { omTmrw = tmT.toFixed(1); omTmrwTime = getPTMilitaryTime(tmTm); }
+        if (yT !== -999) { omYest = yT.toFixed(1); omYestTime = getLocalTime(yTm, st.tz); }
+        if (tT !== -999) { omToday = tT.toFixed(1); omTodayTime = typeof tTm === 'number' ? getLocalTime(tTm, st.tz) : getLocalTime(tTm, st.tz); }
+        if (tmT !== -999) { omTmrw = tmT.toFixed(1); omTmrwTime = getLocalTime(tmTm, st.tz); }
     } else { omYest = "Err"; omToday = "Err"; omTmrw = "Err"; }
 
     // 5. Process WU Current
@@ -287,7 +286,7 @@ async function fetchStationData(st) {
     saveForecastToMemory(st.id, todayStr, "NWS", nwsToday, nwsTodayTime);
     saveForecastToMemory(st.id, todayStr, "WU", wuToday, wuTodayTime);
     saveForecastToMemory(st.id, todayStr, "OM", omToday, omTodayTime);
-    if (wuCurrentTempF !== "—") saveForecastToMemory(st.id, todayStr, "OBS", wuCurrentTempF, getPTMilitaryTime(wuCurrentTimeMs));
+    if (wuCurrentTempF !== "—") saveForecastToMemory(st.id, todayStr, "OBS", wuCurrentTempF, getLocalTime(wuCurrentTimeMs, st.tz));
 
     return {
       id: st.id, name: st.name,

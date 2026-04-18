@@ -71,18 +71,18 @@
 
 <script>
   let STATIONS = [
-    { id: "KBOS", name: "Boston" }, { id: "KLGA", name: "LaGuardia" },
-    { id: "KPHL", name: "Philadelphia" }, { id: "KDCA", name: "Washington Reagan" },
-    { id: "KMIA", name: "Miami" }, { id: "KCLT", name: "Charlotte" },
-    { id: "KJAX", name: "Jacksonville" }, { id: "KDTW", name: "Detroit" },
-    { id: "KATL", name: "Atlanta" }, { id: "KBNA", name: "Nashville" },
-    { id: "KMDW", name: "Chicago Midway" }, { id: "KMSP", name: "Minneapolis" },
-    { id: "KHOU", name: "Houston Hobby" }, { id: "KDFW", name: "Dallas/Fort Worth" },
-    { id: "KOKC", name: "Oklahoma City" }, { id: "KAUS", name: "Austin" },
-    { id: "KSAT", name: "San Antonio" }, { id: "KBKF", name: "Denver Buckley" },
-    { id: "KPHX", name: "Phoenix" }, { id: "KLAS", name: "Las Vegas" },
-    { id: "KLAX", name: "Los Angeles" }, { id: "KSEA", name: "Seattle" },
-    { id: "KSFO", name: "San Francisco" }
+    { id: "KBOS", name: "Boston", tz: "America/New_York" }, { id: "KLGA", name: "LaGuardia", tz: "America/New_York" },
+    { id: "KPHL", name: "Philadelphia", tz: "America/New_York" }, { id: "KDCA", name: "Washington Reagan", tz: "America/New_York" },
+    { id: "KMIA", name: "Miami", tz: "America/New_York" }, { id: "KCLT", name: "Charlotte", tz: "America/New_York" },
+    { id: "KJAX", name: "Jacksonville", tz: "America/New_York" }, { id: "KDTW", name: "Detroit", tz: "America/Detroit" },
+    { id: "KATL", name: "Atlanta", tz: "America/New_York" }, { id: "KBNA", name: "Nashville", tz: "America/Chicago" },
+    { id: "KMDW", name: "Chicago Midway", tz: "America/Chicago" }, { id: "KMSP", name: "Minneapolis", tz: "America/Chicago" },
+    { id: "KHOU", name: "Houston Hobby", tz: "America/Chicago" }, { id: "KDFW", name: "Dallas/Fort Worth", tz: "America/Chicago" },
+    { id: "KOKC", name: "Oklahoma City", tz: "America/Chicago" }, { id: "KAUS", name: "Austin", tz: "America/Chicago" },
+    { id: "KSAT", name: "San Antonio", tz: "America/Chicago" }, { id: "KBKF", name: "Denver Buckley", tz: "America/Denver" },
+    { id: "KPHX", name: "Phoenix", tz: "America/Phoenix" }, { id: "KLAS", name: "Las Vegas", tz: "America/Los_Angeles" },
+    { id: "KLAX", name: "Los Angeles", tz: "America/Los_Angeles" }, { id: "KSEA", name: "Seattle", tz: "America/Los_Angeles" },
+    { id: "KSFO", name: "San Francisco", tz: "America/Los_Angeles" }
   ];
 
   window.dashboardData = [];
@@ -98,8 +98,6 @@
       STATIONS.splice(newIndex, 0, movedItem);
       
       const newOrderIds = STATIONS.map(s => s.id);
-      
-      // Send the new layout to the server to be synced globally
       fetch('/api/order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -112,17 +110,28 @@
       }
   }
 
-  function getPTMilitaryTime(dateMs) {
-    return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(dateMs));
+  function getLocalTime(dateMs, tz) {
+    return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(dateMs));
   }
 
-  function getMidnightPT(ms) {
-      const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date(ms));
-      const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', timeZoneName: 'shortOffset' }).formatToParts(new Date(ms));
-      let offsetRaw = parts.find(p => p.type === 'timeZoneName').value.replace('GMT', '') || '-08:00'; 
+  // FIXED: Midnight calculation precisely tied to the local Station's Timezone
+  function getMidnightLocal(ms, tz) {
+      const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(ms));
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' }).formatToParts(new Date(ms));
+      
+      let offsetPart = parts.find(p => p.type === 'timeZoneName');
+      let offsetRaw = offsetPart ? offsetPart.value.replace('GMT', '') : '';
+      
+      if (!offsetRaw) {
+         let tzPart = parts.find(p => p.type === 'timeZoneName')?.value;
+         if (tzPart === 'UTC' || tzPart === 'Z') offsetRaw = '+00:00';
+         else offsetRaw = '-00:00'; 
+      }
+
       let sign = offsetRaw.startsWith('-') ? '-' : '+';
       let rawNums = offsetRaw.replace(/[+-]/g, '');
       let [hh, mm] = rawNums.split(':');
+      if (!hh) hh = '00';
       if (!mm) mm = '00';
       if (hh.length === 1) hh = '0' + hh;
       return Date.parse(`${dateStr}T00:00:00${sign}${hh}:${mm}`);
@@ -141,12 +150,12 @@
       
       const basicFmt = (temp, time, color) => {
           if (temp === "Err" || temp === "—" || temp == null) return "—";
-          return `<span style="color: ${color}; font-weight: 700;">${temp}°F</span> <span class="time-sub">@ ${time} PT</span>`;
+          return `<span style="color: ${color}; font-weight: 700;">${temp}°F</span> <span class="time-sub">@ ${time} Local</span>`;
       };
 
       const fmtCardToday = (temp, time, cacheObj, color) => {
           if (temp === "Err" || temp === "—" || temp == null) return "—";
-          let cellHtml = `<span style="color: ${color}; font-weight: 700;">${temp}°F</span> <span class="time-sub">@ ${time} PT</span>`;
+          let cellHtml = `<span style="color: ${color}; font-weight: 700;">${temp}°F</span> <span class="time-sub">@ ${time} Local</span>`;
           if (cacheObj && cacheObj.initialTemp) {
               const diff = parseFloat(temp) - parseFloat(cacheObj.initialTemp);
               if (Math.abs(diff) >= 0.1) {
@@ -195,7 +204,7 @@
                               <span class="val-large" style="color: #10b981;">${data.wuCurrentTempF}°F</span>
                           </div>
                           <div class="metar-row">
-                              <span style="font-weight: 600; opacity: 0.9;">NWS METAR <span style="font-size: 11px; font-weight: normal; opacity: 0.7;">(@ ${data.obsTimeStr} PT)</span>:</span>
+                              <span style="font-weight: 600; opacity: 0.9;">NWS METAR <span style="font-size: 11px; font-weight: normal; opacity: 0.7;">(@ ${data.obsTimeStr} Local)</span>:</span>
                               <span class="val-large" style="color: inherit;">${data.currentTempF}°F</span>
                           </div>
                       </div>
@@ -250,7 +259,8 @@
 
   function renderSingleChart(stId) {
       const data = window.dashboardData.find(d => d.id === stId);
-      if (!data) return;
+      const stConfig = STATIONS.find(s => s.id === stId);
+      if (!data || !stConfig) return;
 
       const ctx = document.getElementById(`chart-${data.id}`);
       if (!ctx) return;
@@ -260,7 +270,8 @@
       const view = window.chartViews[data.id] || 'today';
       const targetMs = view === 'today' ? Date.now() : Date.now() - 86400000;
       
-      const minMs = getMidnightPT(targetMs);
+      // Calculate midnight perfectly based on Local Time
+      const minMs = getMidnightLocal(targetMs, stConfig.tz);
       const maxMs = minMs + 86400000;
 
       const parseHistory = (historyArr) => {
@@ -292,14 +303,44 @@
       const gridColor = isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)";
       const textColor = isDark ? "#9ca3af" : "#6b7280";
 
+      let metarMin = 53; 
+      if (data.obsTimeStr && data.obsTimeStr.includes(':')) {
+          metarMin = parseInt(data.obsTimeStr.split(':')[1], 10);
+          if (isNaN(metarMin)) metarMin = 53;
+      }
+
+      const metarLinePlugin = {
+          id: 'metarLines',
+          beforeDraw: (chart) => {
+              const { ctx, chartArea: { top, bottom, left, right }, scales: { x } } = chart;
+              ctx.save();
+              ctx.beginPath();
+              ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)';
+              ctx.lineWidth = 1;
+              ctx.setLineDash([4, 4]);
+
+              for (let i = 0; i <= 24; i++) {
+                  let lineTime = minMs + (i * 3600000) + (metarMin * 60000);
+                  let lineX = x.getPixelForValue(lineTime);
+                  if (lineX >= left && lineX <= right) {
+                      ctx.moveTo(lineX, top);
+                      ctx.lineTo(lineX, bottom);
+                  }
+              }
+              ctx.stroke();
+              ctx.restore();
+          }
+      };
+
       chartInstances[data.id] = new Chart(ctx, {
           type: 'line',
+          plugins: [metarLinePlugin],
           data: {
               datasets: [
-                  { label: 'NWS', data: datasetNWS, borderColor: '#3b82f6', backgroundColor: '#3b82f6', borderWidth: 2, tension: 0.1, pointRadius: 2, pointHitRadius: 10, spanGaps: true },
-                  { label: 'WU', data: datasetWU, borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 2, tension: 0.1, pointRadius: 2, pointHitRadius: 10, spanGaps: true },
-                  { label: 'OM', data: datasetOM, borderColor: '#8b5cf6', backgroundColor: '#8b5cf6', borderWidth: 2, tension: 0.1, pointRadius: 2, pointHitRadius: 10, spanGaps: true },
-                  { label: 'Observed', data: datasetOBS, borderColor: '#10b981', backgroundColor: '#10b981', borderWidth: 3, borderDash: [5, 5], tension: 0.1, pointRadius: 2, pointHitRadius: 10, spanGaps: true }
+                  { label: 'NWS', data: datasetNWS, borderColor: '#3b82f6', backgroundColor: '#3b82f6', borderWidth: 2, tension: 0.1, pointRadius: 0, pointHitRadius: 10, spanGaps: true },
+                  { label: 'WU', data: datasetWU, borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 2, tension: 0.1, pointRadius: 0, pointHitRadius: 10, spanGaps: true },
+                  { label: 'OM', data: datasetOM, borderColor: '#8b5cf6', backgroundColor: '#8b5cf6', borderWidth: 2, tension: 0.1, pointRadius: 0, pointHitRadius: 10, spanGaps: true },
+                  { label: 'Observed', data: datasetOBS, borderColor: '#10b981', backgroundColor: '#10b981', borderWidth: 3, borderDash: [5, 5], tension: 0.1, pointRadius: 0, pointHitRadius: 10, spanGaps: true }
               ]
           },
           options: {
@@ -307,10 +348,33 @@
               interaction: { mode: 'index', intersect: false },
               plugins: {
                   legend: { position: 'top', labels: { color: textColor, boxWidth: 12, font: { size: 11 } } },
-                  tooltip: { titleFont: { size: 13 }, bodyFont: { size: 12 }, padding: 10 }
+                  tooltip: { 
+                      titleFont: { size: 13 }, 
+                      bodyFont: { size: 12 }, 
+                      padding: 10,
+                      callbacks: {
+                          // Force Tooltip to show exact Local Time
+                          title: function(context) {
+                              if (!context || !context.length) return '';
+                              return new Intl.DateTimeFormat('en-US', { timeZone: stConfig.tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(context[0].parsed.x));
+                          }
+                      }
+                  }
               },
               scales: {
-                  x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'HH:mm' }, min: minMs, max: maxMs, grid: { color: gridColor, drawBorder: false }, ticks: { color: textColor, maxRotation: 0, maxTicksLimit: 8, stepSize: 3 } },
+                  x: { 
+                      type: 'time', 
+                      min: minMs, 
+                      max: maxMs, 
+                      grid: { color: gridColor, drawBorder: false }, 
+                      ticks: { 
+                          color: textColor, maxRotation: 0, maxTicksLimit: 24, stepSize: 1,
+                          // Force X-Axis to show exact Local Time labels
+                          callback: function(value) {
+                              return new Intl.DateTimeFormat('en-US', { timeZone: stConfig.tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
+                          }
+                      } 
+                  },
                   y: {
                       grid: { color: gridColor, drawBorder: false }, ticks: { color: textColor, callback: (val) => val + '°' },
                       suggestedMin: (ctx) => {
@@ -335,7 +399,6 @@
     }
     timeEl.textContent = "Syncing with Engine...";
 
-    // Ask server for the globally saved order
     try {
         const orderRes = await fetch('/api/order');
         if (orderRes.ok) {
@@ -358,7 +421,8 @@
         }
     } catch(e) { console.error("Engine connection failed", e); }
 
-    timeEl.textContent = `Last synced: ${getPTMilitaryTime(Date.now())} PT`;
+    // Using SF browser time for top "Last synced" generic status is fine, but formatting explicitly.
+    timeEl.textContent = `Last synced: ${new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date())}`;
   }
 
   refreshAll();
