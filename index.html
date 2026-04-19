@@ -13,11 +13,19 @@
     body { font-family: system-ui, -apple-system, sans-serif; margin: 20px; line-height: 1.4; background: #f9fafb; color: #111827; }
     @media (prefers-color-scheme: dark) { body { background: #111827; color: #f9fafb; } }
 
-    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 12px; }
     h1 { margin: 0; font-size: 24px; }
-    .btn-group { display: flex; gap: 8px; }
-    button { padding: 8px 16px; border-radius: 8px; border: 1px solid #d1d5db; background: transparent; cursor: pointer; color: inherit; font-weight: 600; }
+    
+    .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+    button { padding: 8px 16px; border-radius: 8px; border: 1px solid #d1d5db; background: transparent; cursor: pointer; color: inherit; font-weight: 600; white-space: nowrap; }
     button:hover { background: rgba(127,127,127,0.1); }
+
+    /* New Search Input Styling */
+    #searchInput { padding: 8px 16px; border-radius: 8px; border: 1px solid #d1d5db; background: transparent; color: inherit; font-family: inherit; font-size: 14px; flex-grow: 1; max-width: 300px; outline: none; }
+    #searchInput:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
+    @media (prefers-color-scheme: dark) { #searchInput { border-color: #4b5563; } }
+
+    .controls-bar { display: flex; gap: 12px; margin-bottom: 24px; align-items: center; flex-wrap: wrap; }
 
     .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
     .card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
@@ -67,27 +75,59 @@
     </div>
   </header>
 
+  <div class="controls-bar">
+      <input type="text" id="searchInput" placeholder="🔍 Search city or ID..." oninput="updateSearch(this.value)">
+      <div class="btn-group">
+          <button onclick="sortEastWest()">East to West</button>
+          <button onclick="restoreOrder()">Restore Order</button>
+      </div>
+  </div>
+
   <div class="grid" id="dashboard"></div>
 
 <script>
+  // Re-added 'lon' so the client-side East-to-West sorting math functions perfectly
   let STATIONS = [
-    { id: "KBOS", name: "Boston", tz: "America/New_York" }, { id: "KLGA", name: "LaGuardia", tz: "America/New_York" },
-    { id: "KPHL", name: "Philadelphia", tz: "America/New_York" }, { id: "KDCA", name: "Washington Reagan", tz: "America/New_York" },
-    { id: "KMIA", name: "Miami", tz: "America/New_York" }, { id: "KCLT", name: "Charlotte", tz: "America/New_York" },
-    { id: "KJAX", name: "Jacksonville", tz: "America/New_York" }, { id: "KDTW", name: "Detroit", tz: "America/Detroit" },
-    { id: "KATL", name: "Atlanta", tz: "America/New_York" }, { id: "KBNA", name: "Nashville", tz: "America/Chicago" },
-    { id: "KMDW", name: "Chicago Midway", tz: "America/Chicago" }, { id: "KMSP", name: "Minneapolis", tz: "America/Chicago" },
-    { id: "KHOU", name: "Houston Hobby", tz: "America/Chicago" }, { id: "KDFW", name: "Dallas/Fort Worth", tz: "America/Chicago" },
-    { id: "KOKC", name: "Oklahoma City", tz: "America/Chicago" }, { id: "KAUS", name: "Austin", tz: "America/Chicago" },
-    { id: "KSAT", name: "San Antonio", tz: "America/Chicago" }, { id: "KBKF", name: "Denver Buckley", tz: "America/Denver" },
-    { id: "KPHX", name: "Phoenix", tz: "America/Phoenix" }, { id: "KLAS", name: "Las Vegas", tz: "America/Los_Angeles" },
-    { id: "KLAX", name: "Los Angeles", tz: "America/Los_Angeles" }, { id: "KSEA", name: "Seattle", tz: "America/Los_Angeles" },
-    { id: "KSFO", name: "San Francisco", tz: "America/Los_Angeles" }
+    { id: "KBOS", name: "Boston", tz: "America/New_York", lon: -71.0096 },
+    { id: "KLGA", name: "LaGuardia", tz: "America/New_York", lon: -73.8740 },
+    { id: "KPHL", name: "Philadelphia", tz: "America/New_York", lon: -75.2437 },
+    { id: "KDCA", name: "Washington Reagan", tz: "America/New_York", lon: -77.0402 },
+    { id: "KMIA", name: "Miami", tz: "America/New_York", lon: -80.2870 },
+    { id: "KCLT", name: "Charlotte", tz: "America/New_York", lon: -80.9431 },
+    { id: "KJAX", name: "Jacksonville", tz: "America/New_York", lon: -81.6879 },
+    { id: "KDTW", name: "Detroit", tz: "America/Detroit", lon: -83.3533 },
+    { id: "KATL", name: "Atlanta", tz: "America/New_York", lon: -84.4277 },
+    { id: "KBNA", name: "Nashville", tz: "America/Chicago", lon: -86.6774 },
+    { id: "KMDW", name: "Chicago Midway", tz: "America/Chicago", lon: -87.7522 },
+    { id: "KMSP", name: "Minneapolis", tz: "America/Chicago", lon: -93.2223 },
+    { id: "KHOU", name: "Houston Hobby", tz: "America/Chicago", lon: -95.2789 },
+    { id: "KDFW", name: "Dallas/Fort Worth", tz: "America/Chicago", lon: -97.0403 },
+    { id: "KOKC", name: "Oklahoma City", tz: "America/Chicago", lon: -97.6008 },
+    { id: "KAUS", name: "Austin", tz: "America/Chicago", lon: -97.6687 },
+    { id: "KSAT", name: "San Antonio", tz: "America/Chicago", lon: -98.4698 },
+    { id: "KBKF", name: "Denver Buckley", tz: "America/Denver", lon: -104.7517 },
+    { id: "KPHX", name: "Phoenix", tz: "America/Phoenix", lon: -112.0116 },
+    { id: "KLAS", name: "Las Vegas", tz: "America/Los_Angeles", lon: -115.1536 },
+    { id: "KLAX", name: "Los Angeles", tz: "America/Los_Angeles", lon: -118.4085 },
+    { id: "KSEA", name: "Seattle", tz: "America/Los_Angeles", lon: -122.3088 },
+    { id: "KSFO", name: "San Francisco", tz: "America/Los_Angeles", lon: -122.3656 }
   ];
 
   window.dashboardData = [];
   window.chartViews = {}; 
   let chartInstances = {};
+
+  // UI State Variables
+  let currentFilter = '';
+  let currentSortMode = 'custom'; // 'custom' or 'east-west'
+
+  function applyCustomSort() {
+      const savedOrder = JSON.parse(localStorage.getItem('customStationOrder')) || [];
+      if (savedOrder.length === STATIONS.length) {
+          STATIONS.sort((a, b) => savedOrder.indexOf(a.id) - savedOrder.indexOf(b.id));
+      }
+  }
+  applyCustomSort();
 
   window.changeOrder = function(stId, newPosStr) {
       const newIndex = parseInt(newPosStr) - 1;
@@ -104,17 +144,64 @@
           body: JSON.stringify({ order: newOrderIds })
       }).catch(e => console.error("Failed to sync order", e));
       
-      if (window.dashboardData.length > 0) {
-          window.dashboardData.sort((a, b) => STATIONS.findIndex(s => s.id === a.id) - STATIONS.findIndex(s => s.id === b.id));
-          renderDashboard(window.dashboardData);
+      // Force UI back to custom sort mode if they manually use the dropdown
+      currentSortMode = 'custom';
+      applyClientFiltersAndSort();
+  }
+
+  // --- CLIENT-SIDE FILTERING & SORTING LOGIC ---
+  window.updateSearch = function(val) {
+      currentFilter = val;
+      applyClientFiltersAndSort();
+  }
+
+  window.sortEastWest = function() {
+      currentSortMode = 'east-west';
+      document.getElementById('searchInput').value = ''; // Optional: clear search on global sort
+      currentFilter = '';
+      applyClientFiltersAndSort();
+  }
+
+  window.restoreOrder = function() {
+      currentSortMode = 'custom';
+      document.getElementById('searchInput').value = '';
+      currentFilter = '';
+      applyClientFiltersAndSort();
+  }
+
+  function applyClientFiltersAndSort() {
+      if (!window.dashboardData || window.dashboardData.length === 0) return;
+
+      let displayedData = [...window.dashboardData];
+
+      // 1. Search Filter
+      if (currentFilter) {
+          const term = currentFilter.toLowerCase();
+          displayedData = displayedData.filter(d => 
+              d.name.toLowerCase().includes(term) || 
+              d.id.toLowerCase().includes(term)
+          );
       }
+
+      // 2. Sorting
+      if (currentSortMode === 'east-west') {
+          displayedData.sort((a, b) => {
+              const stA = STATIONS.find(s => s.id === a.id);
+              const stB = STATIONS.find(s => s.id === b.id);
+              return (stB ? stB.lon : 0) - (stA ? stA.lon : 0);
+          });
+      } else {
+          // Restore to the explicitly defined server array order
+          displayedData.sort((a, b) => STATIONS.findIndex(s => s.id === a.id) - STATIONS.findIndex(s => s.id === b.id));
+      }
+
+      renderDashboard(displayedData);
   }
 
   function getLocalTime(dateMs, tz) {
     return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(dateMs));
   }
 
-  // FIXED: Midnight calculation precisely tied to the local Station's Timezone
   function getMidnightLocal(ms, tz) {
       const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(ms));
       const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' }).formatToParts(new Date(ms));
@@ -169,9 +256,10 @@
 
       let html = '';
       
-      results.forEach((data, index) => {
+      results.forEach((data) => {
           const view = window.chartViews[data.id] || 'today';
-          let optionsHtml = STATIONS.map((s, i) => `<option value="${i+1}" ${i === index ? 'selected' : ''}>${i+1}</option>`).join('');
+          // Maintain the original STATIONS array absolute index for the dropdown to map to the server state
+          let optionsHtml = STATIONS.map((s, i) => `<option value="${i+1}" ${s.id === data.id ? 'selected' : ''}>${i+1}</option>`).join('');
 
           html += `
             <div class="card">
@@ -270,7 +358,6 @@
       const view = window.chartViews[data.id] || 'today';
       const targetMs = view === 'today' ? Date.now() : Date.now() - 86400000;
       
-      // Calculate midnight perfectly based on Local Time
       const minMs = getMidnightLocal(targetMs, stConfig.tz);
       const maxMs = minMs + 86400000;
 
@@ -353,7 +440,6 @@
                       bodyFont: { size: 12 }, 
                       padding: 10,
                       callbacks: {
-                          // Force Tooltip to show exact Local Time
                           title: function(context) {
                               if (!context || !context.length) return '';
                               return new Intl.DateTimeFormat('en-US', { timeZone: stConfig.tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(context[0].parsed.x));
@@ -369,7 +455,6 @@
                       grid: { color: gridColor, drawBorder: false }, 
                       ticks: { 
                           color: textColor, maxRotation: 0, maxTicksLimit: 24, stepSize: 1,
-                          // Force X-Axis to show exact Local Time labels
                           callback: function(value) {
                               return new Intl.DateTimeFormat('en-US', { timeZone: stConfig.tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
                           }
@@ -415,13 +500,12 @@
             const data = await res.json();
             if (data && data.length > 0) {
                 window.dashboardData = data;
-                window.dashboardData.sort((a, b) => STATIONS.findIndex(s => s.id === a.id) - STATIONS.findIndex(s => s.id === b.id));
-                renderDashboard(window.dashboardData);
+                // Defer to the new client filtering logic instead of directly rendering
+                applyClientFiltersAndSort();
             }
         }
     } catch(e) { console.error("Engine connection failed", e); }
 
-    // Using SF browser time for top "Last synced" generic status is fine, but formatting explicitly.
     timeEl.textContent = `Last synced: ${new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date())}`;
   }
 
